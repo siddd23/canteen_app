@@ -1,0 +1,20 @@
+Add this dependency under `dependencies:` in your existing pubspec.yaml:
+
+  audioplayers: ^6.8.1
+
+Add this asset under the existing `flutter:` section:
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/sounds/order_bell.wav
+
+Copy the included `assets` folder into the Flutter project root, at the same
+level as `lib` and `pubspec.yaml`. Then run:
+
+  flutter pub get
+  dart format lib
+  flutter analyze
+
+YAML spacing is significant. `assets:` must be inside `flutter:`, and the
+asset path must be indented beneath `assets:`.

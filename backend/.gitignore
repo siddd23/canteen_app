@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+node_modules/
+npm-debug.log*
+*.log
+coverage/
+.nyc_output/
+firebase-service-account*.json
+service-account*.json
+.DS_Store

@@ -1,0 +1,107 @@
+class OrderItem {
+  const OrderItem({
+    required this.menuItemId,
+    required this.name,
+    required this.unitPrice,
+    required this.quantity,
+    required this.lineTotal,
+  });
+
+  final String menuItemId;
+  final String name;
+  final double unitPrice;
+  final int quantity;
+  final double lineTotal;
+
+  factory OrderItem.fromJson(Map<String, dynamic> json) => OrderItem(
+    menuItemId: json['menuItemId']?.toString() ?? '',
+    name: json['name']?.toString() ?? '',
+    unitPrice: (json['unitPrice'] as num?)?.toDouble() ?? 0,
+    quantity: (json['quantity'] as num?)?.toInt() ?? 0,
+    lineTotal: (json['lineTotal'] as num?)?.toDouble() ?? 0,
+  );
+}
+
+class CanteenOrder {
+  const CanteenOrder({
+    required this.id,
+    required this.orderNumber,
+    required this.canteenId,
+    required this.companyName,
+    required this.officeCode,
+    required this.building,
+    required this.floor,
+    required this.officeAddress,
+    required this.officeCity,
+    required this.canteenName,
+    required this.customerName,
+    required this.mobile,
+    required this.customerNote,
+    required this.items,
+    required this.itemCount,
+    required this.grandTotal,
+    required this.orderStatus,
+    required this.paymentStatus,
+    required this.createdAt,
+  });
+
+  final String id;
+  final String orderNumber;
+  final String canteenId;
+  final String companyName;
+  final String officeCode;
+  final String building;
+  final String floor;
+  final String officeAddress;
+  final String officeCity;
+  final String canteenName;
+  final String customerName;
+  final String mobile;
+  final String customerNote;
+  final List<OrderItem> items;
+  final int itemCount;
+  final double grandTotal;
+  final String orderStatus;
+  final String paymentStatus;
+  final DateTime? createdAt;
+
+  bool get isPending => orderStatus == 'Pending';
+  bool get isAccepted => orderStatus == 'Accepted';
+  bool get isDelivered => orderStatus == 'Delivered';
+  bool get needsPaymentDecision => isDelivered && paymentStatus == 'Unpaid';
+  bool get isPayLater => paymentStatus == 'PayLater';
+
+  factory CanteenOrder.fromJson(Map<String, dynamic> json) {
+    final office = Map<String, dynamic>.from(
+      json['officeSnapshot'] as Map? ?? const {},
+    );
+    final canteen = Map<String, dynamic>.from(
+      json['canteenSnapshot'] as Map? ?? const {},
+    );
+    final rawItems = json['items'] as List? ?? const [];
+    return CanteenOrder(
+      id: (json['_id'] ?? json['id'])?.toString() ?? '',
+      orderNumber: json['orderNumber']?.toString() ?? '',
+      canteenId: json['canteenId']?.toString() ?? '',
+      companyName: office['companyName']?.toString() ?? '',
+      officeCode: office['officeCode']?.toString() ?? '',
+      building: office['building']?.toString() ?? '',
+      floor: office['floor']?.toString() ?? '',
+      officeAddress: office['address']?.toString() ?? '',
+      officeCity: office['city']?.toString() ?? '',
+      canteenName: canteen['name']?.toString() ?? '',
+      customerName: json['customerName']?.toString() ?? '',
+      mobile: json['mobile']?.toString() ?? '',
+      customerNote: json['customerNote']?.toString() ?? '',
+      items: rawItems
+          .whereType<Map>()
+          .map((item) => OrderItem.fromJson(Map<String, dynamic>.from(item)))
+          .toList(),
+      itemCount: (json['itemCount'] as num?)?.toInt() ?? 0,
+      grandTotal: (json['grandTotal'] as num?)?.toDouble() ?? 0,
+      orderStatus: json['orderStatus']?.toString() ?? 'Pending',
+      paymentStatus: json['paymentStatus']?.toString() ?? 'Unpaid',
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
+    );
+  }
+}

@@ -1,0 +1,25 @@
+BACKGROUND PUSH NOTIFICATION - REQUIRED FILES
+
+Socket.IO provides instant updates while the application is running. Android
+stops that connection after the application process is closed. Reliable
+closed-app notifications therefore require Firebase Cloud Messaging (FCM).
+
+For the next push-notification step, provide:
+
+1. android/app/google-services.json from your Firebase Android app.
+2. Your Flutter project's pubspec.yaml.
+3. android/settings.gradle or settings.gradle.kts.
+4. android/build.gradle or build.gradle.kts.
+5. android/app/build.gradle or build.gradle.kts.
+6. android/app/src/main/AndroidManifest.xml.
+
+Backend production configuration will also require Firebase Admin credentials
+stored as a server secret/environment variable. Do not commit the service
+account JSON to source control or include it in a public ZIP.
+
+The FCM module will then add:
+- device-token registration for each owner;
+- foreground, background and terminated-app notifications;
+- notification tap navigation to the Orders screen;
+- token refresh and logout cleanup;
+- backend push delivery whenever a new order is created.

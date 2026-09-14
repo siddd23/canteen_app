@@ -1,0 +1,232 @@
+const Canteen = require("../models/Canteen");
+
+/*
+ * POST /api/canteens
+ * Approved canteen owner
+ */
+const createCanteen = async (req, res, next) => {
+  try {
+    const {
+      name,
+      address,
+      city,
+      contactNumber,
+      openingTime,
+      closingTime,
+    } = req.body;
+
+    const existingCanteen = await Canteen.findOne({
+      ownerId: req.user.id,
+      name: name.trim(),
+    }).collation({
+      locale: "en",
+      strength: 2,
+    });
+
+    if (existingCanteen) {
+      return res.status(409).json({
+        success: false,
+        message: "You already have a canteen with this name",
+      });
+    }
+
+    const canteen = await Canteen.create({
+      ownerId: req.user.id,
+      name: name.trim(),
+      address: address.trim(),
+      city: city.trim(),
+      contactNumber: contactNumber.trim(),
+      openingTime: openingTime.trim(),
+      closingTime: closingTime.trim(),
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Canteen created successfully",
+      data: {
+        canteen,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * GET /api/canteens
+ * Return only the logged-in owner's canteens
+ */
+const getMyCanteens = async (req, res, next) => {
+  try {
+    const canteens = await Canteen.find({
+      ownerId: req.user.id,
+    }).sort({
+      createdAt: 1,
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: canteens.length,
+      data: {
+        canteens,
+        hasCanteens: canteens.length > 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * GET /api/canteens/:canteenId
+ */
+const getMyCanteenById = async (req, res, next) => {
+  try {
+    const canteen = await Canteen.findOne({
+      _id: req.params.canteenId,
+      ownerId: req.user.id,
+    });
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "Canteen not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        canteen,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * PATCH /api/canteens/:canteenId
+ */
+const updateMyCanteen = async (req, res, next) => {
+  try {
+    const allowedFields = [
+      "name",
+      "address",
+      "city",
+      "contactNumber",
+      "openingTime",
+      "closingTime",
+      "status",
+    ];
+
+    const updates = {};
+
+    allowedFields.forEach((field) => {
+      if (req.body[field] !== undefined) {
+        updates[field] =
+          typeof req.body[field] === "string"
+            ? req.body[field].trim()
+            : req.body[field];
+      }
+    });
+
+    if (updates.name) {
+      const duplicateCanteen = await Canteen.findOne({
+        ownerId: req.user.id,
+        name: updates.name,
+        _id: {
+          $ne: req.params.canteenId,
+        },
+      }).collation({
+        locale: "en",
+        strength: 2,
+      });
+
+      if (duplicateCanteen) {
+        return res.status(409).json({
+          success: false,
+          message: "You already have another canteen with this name",
+        });
+      }
+    }
+
+    const canteen = await Canteen.findOneAndUpdate(
+      {
+        _id: req.params.canteenId,
+        ownerId: req.user.id,
+      },
+      updates,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "Canteen not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Canteen updated successfully",
+      data: {
+        canteen,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * PATCH /api/canteens/:canteenId/status
+ *
+ * We use Active/Inactive instead of permanently deleting a canteen,
+ * because orders and payment records will reference it later.
+ */
+const updateCanteenStatus = async (req, res, next) => {
+  try {
+    const canteen = await Canteen.findOneAndUpdate(
+      {
+        _id: req.params.canteenId,
+        ownerId: req.user.id,
+      },
+      {
+        status: req.body.status,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "Canteen not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Canteen marked as ${canteen.status.toLowerCase()}`,
+      data: {
+        canteen,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  createCanteen,
+  getMyCanteens,
+  getMyCanteenById,
+  updateMyCanteen,
+  updateCanteenStatus,
+};

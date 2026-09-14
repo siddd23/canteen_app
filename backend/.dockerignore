@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+node_modules
+npm-debug.log*
+*.log
+coverage
+test
+firebase-service-account*.json
+service-account*.json
+.git
+.gitignore
