@@ -26,6 +26,7 @@ class CanteenOrder {
   const CanteenOrder({
     required this.id,
     required this.orderNumber,
+    required this.officeId,
     required this.canteenId,
     required this.companyName,
     required this.officeCode,
@@ -47,6 +48,7 @@ class CanteenOrder {
 
   final String id;
   final String orderNumber;
+  final String officeId;
   final String canteenId;
   final String companyName;
   final String officeCode;
@@ -82,6 +84,7 @@ class CanteenOrder {
     return CanteenOrder(
       id: (json['_id'] ?? json['id'])?.toString() ?? '',
       orderNumber: json['orderNumber']?.toString() ?? '',
+      officeId: json['officeId']?.toString() ?? '',
       canteenId: json['canteenId']?.toString() ?? '',
       companyName: office['companyName']?.toString() ?? '',
       officeCode: office['officeCode']?.toString() ?? '',

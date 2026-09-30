@@ -62,6 +62,8 @@ final GoRouter appRouter = GoRouter(
       builder: (context, state) {
         return OwnerDashboardScreen(
           initialCanteenName: state.uri.queryParameters['canteen'],
+          initialCanteenId: state.uri.queryParameters['canteenId'],
+          initialOrderId: state.uri.queryParameters['orderId'],
           initialSection: state.uri.queryParameters['section'],
         );
       },

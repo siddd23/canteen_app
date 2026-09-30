@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
@@ -16,6 +17,7 @@ import '../../../../shared/services/canteen_service.dart';
 import '../../../../shared/services/order_service.dart';
 import '../../../../shared/services/owner_account_service.dart';
 import '../../../../shared/services/realtime_service.dart';
+import '../../../../shared/widgets/canteen_selector.dart';
 import '../../../../shared/widgets/dashboard_shell.dart';
 import '../widgets/office_workspace.dart';
 import '../widgets/menu_workspace.dart';
@@ -28,11 +30,15 @@ import '../widgets/owner_settings_workspace.dart';
 class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({
     this.initialCanteenName,
+    this.initialCanteenId,
+    this.initialOrderId,
     this.initialSection,
     super.key,
   });
 
   final String? initialCanteenName;
+  final String? initialCanteenId;
+  final String? initialOrderId;
   final String? initialSection;
 
   @override
@@ -91,6 +97,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
   String? _dashboardError;
   DashboardSummary? _dashboardSummary;
   int _selectedNavigationIndex = 0;
+  final List<int> _navigationHistory = <int>[0];
+  DateTime? _lastHomeBackPressedAt;
   bool _isLoading = true;
   bool _isDashboardLoading = false;
   final List<OrderNotification> _orderNotifications = [];
@@ -117,12 +125,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
     super.initState();
     if (widget.initialSection == 'orders') {
       _selectedNavigationIndex = 2;
+      _navigationHistory.add(2);
     }
     WidgetsBinding.instance.addObserver(this);
     _loadCanteens();
     _loadOwnerPreferences();
     _initializeNotifications();
     _connectRealtime();
+    final initialOrderId = widget.initialOrderId;
+    if (initialOrderId != null && initialOrderId.isNotEmpty) {
+      unawaited(
+        OrderSoundService.instance.startPendingOrderAlert(initialOrderId),
+      );
+    }
   }
 
   @override
@@ -152,8 +167,13 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
     _newOrderSubscription = RealtimeService.instance.newOrders.listen(
       _handleRealtimeNewOrder,
     );
-    _orderUpdateSubscription = RealtimeService.instance.orderUpdates.listen((_) {
+    _orderUpdateSubscription = RealtimeService.instance.orderUpdates.listen((data) {
       if (!mounted) return;
+      final orderId = (data['id'] ?? data['_id'])?.toString() ?? '';
+      final status = data['orderStatus']?.toString() ?? '';
+      if (orderId.isNotEmpty && status.isNotEmpty && status != 'Pending') {
+        unawaited(OrderSoundService.instance.stopPendingOrderAlert(orderId));
+      }
       setState(() => _orderRealtimeVersion++);
       if (_selectedNavigationIndex == 0) _loadDashboardSummary();
     });
@@ -172,7 +192,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
       _orderRealtimeVersion++;
     });
     if (_selectedNavigationIndex == 0) _loadDashboardSummary();
-    unawaited(OrderSoundService.instance.playNewOrderBell());
+    unawaited(
+      OrderSoundService.instance.startPendingOrderAlert(notification.id),
+    );
     SystemNotificationService.instance.show(
       title: 'New canteen order',
       body: '${notification.orderNumber} from ${notification.customerName}',
@@ -240,7 +262,11 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
         _loadDashboardSummary();
       }
       final latest = fresh.last;
-      unawaited(OrderSoundService.instance.playNewOrderBell());
+      for (final notification in fresh) {
+        unawaited(
+          OrderSoundService.instance.startPendingOrderAlert(notification.id),
+        );
+      }
       SystemNotificationService.instance.show(
         title: fresh.length == 1 ? 'New canteen order' : '${fresh.length} new orders',
         body: fresh.length == 1
@@ -274,13 +300,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
 
   void _openNotification(OrderNotification notification) {
     if (_canteens.any((canteen) => canteen.id == notification.canteenId)) {
-      setState(() {
-        _selectedCanteenId = notification.canteenId;
-        _selectedNavigationIndex = 2;
-      });
-    } else {
-      setState(() => _selectedNavigationIndex = 2);
+      setState(() => _selectedCanteenId = notification.canteenId);
     }
+    _selectNavigation(2);
   }
 
   Future<void> _showNotifications() async {
@@ -311,7 +333,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
 
       if (!mounted) return;
 
-      String? selectedId = _selectedCanteenId;
+      String? selectedId = _selectedCanteenId ?? widget.initialCanteenId;
       if (canteens.isNotEmpty &&
           !canteens.any((canteen) => canteen.id == selectedId)) {
         final initialName = widget.initialCanteenName?.trim();
@@ -404,11 +426,13 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
   }
 
   Future<void> _logout() async {
+    await OrderSoundService.instance.stopAllAlerts();
     await AuthService.instance.logout();
     if (mounted) context.go(AppRoutes.login);
   }
 
   Future<void> _expireSession() async {
+    await OrderSoundService.instance.stopAllAlerts();
     await AuthService.instance.logout();
     if (!mounted) return;
 
@@ -422,8 +446,55 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
   }
 
   void _selectNavigation(int index) {
-    setState(() => _selectedNavigationIndex = index);
+    if (index == _selectedNavigationIndex) return;
+    setState(() {
+      _selectedNavigationIndex = index;
+      _lastHomeBackPressedAt = null;
+      if (index == 0) {
+        _navigationHistory
+          ..clear()
+          ..add(0);
+      } else {
+        _navigationHistory.add(index);
+      }
+    });
     if (index == 0) _loadDashboardSummary();
+  }
+
+  void _handleSystemBack() {
+    if (_selectedNavigationIndex != 0) {
+      setState(() {
+        if (_navigationHistory.isNotEmpty) {
+          _navigationHistory.removeLast();
+        }
+        _selectedNavigationIndex = _navigationHistory.isEmpty
+            ? 0
+            : _navigationHistory.last;
+        if (_navigationHistory.isEmpty) _navigationHistory.add(0);
+        _lastHomeBackPressedAt = null;
+      });
+      if (_selectedNavigationIndex == 0) _loadDashboardSummary();
+      return;
+    }
+
+    final now = DateTime.now();
+    final shouldExit = _lastHomeBackPressedAt != null &&
+        now.difference(_lastHomeBackPressedAt!) <=
+            const Duration(seconds: 2);
+    if (shouldExit) {
+      SystemNavigator.pop();
+      return;
+    }
+
+    _lastHomeBackPressedAt = now;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text('Press back again to exit BookFood'),
+          duration: Duration(seconds: 2),
+        ),
+      );
   }
 
   void _showComingSoon(String feature) {
@@ -438,14 +509,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    return DashboardShell(
-      title: 'Owner workspace',
-      subtitle: '',
-      destinations: _destinations,
-      selectedIndex: _selectedNavigationIndex,
-      onDestinationSelected: _selectNavigation,
-      onLogout: _logout,
-      actions: [
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _handleSystemBack();
+      },
+      child: DashboardShell(
+        title: 'Owner workspace',
+        subtitle: '',
+        destinations: _destinations,
+        selectedIndex: _selectedNavigationIndex,
+        onDestinationSelected: _selectNavigation,
+        onLogout: _logout,
+        actions: [
         if (_selectedNavigationIndex == 0)
           IconButton(
             tooltip: 'Refresh dashboard',
@@ -500,8 +576,9 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
           ),
         ),
         const SizedBox(width: 8),
-      ],
-      child: _buildSelectedPage(),
+        ],
+        child: _buildSelectedPage(),
+      ),
     );
   }
 
@@ -528,6 +605,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
       return OrderWorkspace(
         canteens: _canteens,
         initialCanteenId: _selectedCanteenId,
+        initialOrderId: widget.initialOrderId,
         onCanteenChanged: (canteenId) {
           setState(() => _selectedCanteenId = canteenId);
         },
@@ -727,49 +805,11 @@ class _OwnerWelcomeHeader extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                child: DropdownMenu<String>(
-                  key: ValueKey(selectedCanteenId),
-                  initialSelection: selectedCanteenId,
-                  expandedInsets: EdgeInsets.zero,
-                  menuHeight: 280,
-                  label: const Text('Managing canteen'),
-                  leadingIcon: const Icon(Icons.storefront_outlined),
-                  inputDecorationTheme: InputDecorationTheme(
-                    filled: true,
-                    fillColor: AppColors.surface,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(color: AppColors.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: const BorderSide(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
-                    ),
-                  ),
-                  dropdownMenuEntries: canteens
-                      .map(
-                        (item) => DropdownMenuEntry(
-                          value: item.id,
-                          label: item.name,
-                          leadingIcon: const Icon(
-                            Icons.storefront_outlined,
-                            size: 20,
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onSelected: onCanteenChanged,
+                child: CanteenSelector(
+                  canteens: canteens,
+                  selectedId: selectedCanteenId,
+                  label: 'Managing canteen',
+                  onChanged: onCanteenChanged,
                 ),
               ),
               const SizedBox(width: 10),
@@ -882,39 +922,10 @@ class _OwnerWelcomeHeader extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: DropdownButtonFormField<String>(
-                        initialValue: selectedCanteenId,
-                        isExpanded: true,
-                        dropdownColor: AppColors.surface,
-                        decoration: InputDecoration(
-                          prefixIcon: const Icon(Icons.storefront_outlined),
-                          filled: true,
-                          fillColor: AppColors.surface,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                        items: canteens
-                            .map(
-                              (item) => DropdownMenuItem(
-                                value: item.id,
-                                child: Text(
-                                  item.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            )
-                            .toList(),
+                      child: CanteenSelector(
+                        canteens: canteens,
+                        selectedId: selectedCanteenId,
+                        label: 'Managing canteen',
                         onChanged: onCanteenChanged,
                       ),
                     ),

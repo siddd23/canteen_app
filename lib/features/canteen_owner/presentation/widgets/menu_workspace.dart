@@ -7,6 +7,7 @@ import '../../../../shared/models/menu_category.dart';
 import '../../../../shared/models/menu_item.dart';
 import '../../../../shared/models/menu_snapshot.dart';
 import '../../../../shared/services/menu_service.dart';
+import '../../../../shared/widgets/canteen_selector.dart';
 import '../../../../shared/widgets/dashboard_shell.dart';
 
 class MenuWorkspace extends StatefulWidget {
@@ -383,26 +384,9 @@ class _MenuHeader extends StatelessWidget {
         final compact = constraints.maxWidth < 850;
         final selector = SizedBox(
           width: compact ? double.infinity : 290,
-          child: DropdownButtonFormField<String>(
-            initialValue: selectedCanteenId,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Canteen',
-              prefixIcon: Icon(Icons.storefront_outlined),
-              isDense: true,
-            ),
-            items: canteens
-                .map(
-                  (canteen) => DropdownMenuItem(
-                    value: canteen.id,
-                    child: Text(
-                      canteen.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                )
-                .toList(),
+          child: CanteenSelector(
+            canteens: canteens,
+            selectedId: selectedCanteenId,
             onChanged: onCanteenChanged,
           ),
         );

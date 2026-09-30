@@ -10,6 +10,7 @@ const {
   getDashboardSummary,
   getOrderNotifications,
   getOrderHistory,
+  getOfficeStatement,
   getSalesReport,
 } = require("../controllers/orderController");
 const protect = require("../middleware/authMiddleware");
@@ -39,9 +40,21 @@ router.get(
 );
 
 router.get(
+  "/office-statement",
+  [
+    query("officeId").isMongoId().withMessage("Valid office ID is required"),
+    query("dateFrom").optional().isISO8601().withMessage("Invalid from date"),
+    query("dateTo").optional().isISO8601().withMessage("Invalid to date"),
+  ],
+  validateRequest,
+  getOfficeStatement,
+);
+
+router.get(
   "/history",
   [
     query("canteenId").optional().isMongoId().withMessage("Invalid canteen ID"),
+    query("officeId").optional().isMongoId().withMessage("Invalid office ID"),
     query("status")
       .optional()
       .isIn(["Pending", "Accepted", "Delivered", "Rejected", "Cancelled"])

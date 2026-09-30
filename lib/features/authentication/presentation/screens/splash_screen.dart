@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/routes/app_router.dart';
+import '../../../../core/services/push_notification_service.dart';
 import '../../../../shared/services/auth_service.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -22,17 +23,22 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> _restoreSession() async {
     final results = await Future.wait<dynamic>([
       AuthService.instance.restoreSession(),
+      PushNotificationService.instance.ready,
       Future<void>.delayed(const Duration(milliseconds: 1200)),
     ]);
     if (!mounted) return;
 
     final destination = results.first as String?;
-    final route = switch (destination) {
+    var route = switch (destination) {
       'admin_dashboard' => AppRoutes.adminDashboard,
       'owner_dashboard' => AppRoutes.ownerDashboard,
       'create_canteen' => AppRoutes.createCanteen,
       _ => AppRoutes.welcome,
     };
+    if (destination == 'owner_dashboard') {
+      final pending = PushNotificationService.instance.takePendingOrder();
+      if (pending != null) route = pending.ownerRoute;
+    }
     context.go(route);
   }
 
@@ -46,16 +52,7 @@ class _SplashScreenState extends State<SplashScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _Logo(),
-              SizedBox(height: 24),
-              Text(
-                'Canteen App',
-                style: TextStyle(
-                  color: AppColors.white,
-                  fontSize: 34,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              SizedBox(height: 8),
+              SizedBox(height: 18),
               Text(
                 'Fresh food. Faster ordering.',
                 style: TextStyle(color: AppColors.white, fontSize: 16),
@@ -82,18 +79,11 @@ class _Logo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(28),
-      ),
-      child: const Icon(
-        Icons.restaurant_menu_rounded,
-        size: 52,
-        color: AppColors.primary,
-      ),
+    return Image.asset(
+      'assets/images/bookfood_logo_white.png',
+      width: 276,
+      fit: BoxFit.contain,
+      semanticLabel: 'BookFood',
     );
   }
 }

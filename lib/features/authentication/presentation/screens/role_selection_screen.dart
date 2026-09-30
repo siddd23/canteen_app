@@ -102,18 +102,11 @@ class _PageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: const Icon(
-            Icons.restaurant_menu_rounded,
-            color: AppColors.primary,
-            size: 38,
-          ),
+        Image.asset(
+          'assets/images/bookfood_logo_dark.png',
+          width: 230,
+          fit: BoxFit.contain,
+          semanticLabel: 'BookFood',
         ),
         const SizedBox(height: 22),
         Text(

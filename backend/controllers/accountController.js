@@ -156,6 +156,13 @@ const changeMyPassword = async (req, res, next) => {
 const registerNotificationToken = async (req, res, next) => {
   try {
     const token = req.body.token.trim();
+    // An FCM token identifies one app installation. If the same device signs
+    // into a different owner account, move the token instead of leaving it on
+    // both accounts and leaking another canteen's order notifications.
+    await Owner.updateMany(
+      { _id: { $ne: req.user.id }, fcmTokens: token },
+      { $pull: { fcmTokens: token } },
+    );
     await Owner.findByIdAndUpdate(req.user.id, {
       $addToSet: { fcmTokens: token },
     });

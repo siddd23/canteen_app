@@ -9,6 +9,28 @@ import '../../shared/services/token_storage_service.dart';
 import '../constants/api_constants.dart';
 import '../routes/app_router.dart';
 
+class PendingOrderNotification {
+  const PendingOrderNotification({
+    required this.orderId,
+    required this.canteenId,
+  });
+
+  final String orderId;
+  final String canteenId;
+
+  String get ownerRoute {
+    final parameters = <String, String>{
+      'section': 'orders',
+      if (canteenId.isNotEmpty) 'canteenId': canteenId,
+      if (orderId.isNotEmpty) 'orderId': orderId,
+    };
+    return Uri(
+      path: AppRoutes.ownerDashboard,
+      queryParameters: parameters,
+    ).toString();
+  }
+}
+
 class PushNotificationService {
   PushNotificationService._();
 
@@ -16,11 +38,12 @@ class PushNotificationService {
 
   static const AndroidNotificationChannel _newOrdersChannel =
       AndroidNotificationChannel(
-        'new_orders',
+        'new_orders_v2',
         'New orders',
         description: 'Alerts the canteen owner when a new order is placed.',
         importance: Importance.max,
         playSound: true,
+        sound: RawResourceAndroidNotificationSound('order_bell'),
       );
 
   final FlutterLocalNotificationsPlugin _localNotifications =
@@ -28,6 +51,16 @@ class PushNotificationService {
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<RemoteMessage>? _openedMessageSubscription;
   bool _initialized = false;
+  final Completer<void> _readyCompleter = Completer<void>();
+  PendingOrderNotification? _pendingOrder;
+
+  Future<void> get ready => _readyCompleter.future;
+
+  PendingOrderNotification? takePendingOrder() {
+    final pending = _pendingOrder;
+    _pendingOrder = null;
+    return pending;
+  }
 
   bool get _supportsNativePush {
     if (kIsWeb) return false;
@@ -36,7 +69,11 @@ class PushNotificationService {
   }
 
   Future<void> initialize() async {
-    if (_initialized || !_supportsNativePush) return;
+    if (_initialized) return;
+    if (!_supportsNativePush) {
+      if (!_readyCompleter.isCompleted) _readyCompleter.complete();
+      return;
+    }
     _initialized = true;
 
     try {
@@ -67,9 +104,11 @@ class PushNotificationService {
         _openNotification(initialMessage);
       }
 
-      await registerCurrentDeviceToken();
+      unawaited(registerCurrentDeviceToken());
     } catch (error) {
       debugPrint('Push notification initialization failed: $error');
+    } finally {
+      if (!_readyCompleter.isCompleted) _readyCompleter.complete();
     }
   }
 
@@ -80,7 +119,13 @@ class PushNotificationService {
     );
     await _localNotifications.initialize(
       settings: initializationSettings,
-      onDidReceiveNotificationResponse: (_) => _openOrdersScreen(),
+      onDidReceiveNotificationResponse: (response) {
+        final data = Uri.splitQueryString(response.payload ?? '');
+        _openOrdersScreen(
+          orderId: data['orderId'] ?? '',
+          canteenId: data['canteenId'] ?? '',
+        );
+      },
     );
 
     if (defaultTargetPlatform == TargetPlatform.android) {
@@ -143,13 +188,29 @@ class PushNotificationService {
 
   void _openNotification(RemoteMessage message) {
     if (message.data['type'] == 'new_order') {
-      _openOrdersScreen();
+      _openOrdersScreen(
+        orderId: message.data['orderId']?.toString() ?? '',
+        canteenId: message.data['canteenId']?.toString() ?? '',
+      );
     }
   }
 
-  void _openOrdersScreen() {
+  void _openOrdersScreen({
+    required String orderId,
+    required String canteenId,
+  }) {
+    _pendingOrder = PendingOrderNotification(
+      orderId: orderId,
+      canteenId: canteenId,
+    );
     Future<void>.delayed(const Duration(milliseconds: 350), () {
-      appRouter.go('${AppRoutes.ownerDashboard}?section=orders');
+      // On a cold start the splash screen must restore the owner session first.
+      // It will consume the pending order and perform the navigation itself.
+      if (appRouter.routeInformationProvider.value.uri.path == AppRoutes.splash) {
+        return;
+      }
+      final pending = takePendingOrder();
+      if (pending != null) appRouter.go(pending.ownerRoute);
     });
   }
 

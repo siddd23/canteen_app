@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/services/order_sound_service.dart';
 import '../../../../core/utils/api_exception.dart';
 import '../../../../shared/models/canteen.dart';
 import '../../../../shared/models/order.dart';
 import '../../../../shared/services/order_service.dart';
+import '../../../../shared/widgets/canteen_selector.dart';
 import '../../../../shared/widgets/dashboard_shell.dart';
 
 class OrderWorkspace extends StatefulWidget {
@@ -15,6 +17,7 @@ class OrderWorkspace extends StatefulWidget {
     required this.initialCanteenId,
     required this.onCanteenChanged,
     required this.onSessionExpired,
+    this.initialOrderId,
     this.realtimeVersion = 0,
     super.key,
   });
@@ -23,6 +26,7 @@ class OrderWorkspace extends StatefulWidget {
   final String? initialCanteenId;
   final ValueChanged<String> onCanteenChanged;
   final Future<void> Function() onSessionExpired;
+  final String? initialOrderId;
   final int realtimeVersion;
 
   @override
@@ -62,6 +66,13 @@ class _OrderWorkspaceState extends State<OrderWorkspace>
   @override
   void didUpdateWidget(covariant OrderWorkspace oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final nextCanteenId = _validCanteenId(widget.initialCanteenId);
+    if (nextCanteenId != null && nextCanteenId != _canteenId) {
+      _canteenId = nextCanteenId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _load();
+      });
+    }
     if (oldWidget.realtimeVersion != widget.realtimeVersion) {
       _load(silent: true);
     }
@@ -117,6 +128,27 @@ class _OrderWorkspaceState extends State<OrderWorkspace>
       );
       if (mounted && requestedCanteenId == _canteenId) {
         setState(() => _orders = orders);
+        final initialOrderId = widget.initialOrderId;
+        if (initialOrderId != null && initialOrderId.isNotEmpty) {
+          CanteenOrder? matching;
+          for (final order in orders) {
+            if (order.id == initialOrderId) {
+              matching = order;
+              break;
+            }
+          }
+          if (matching != null) {
+            if (matching.isPending) {
+              unawaited(
+                OrderSoundService.instance.startPendingOrderAlert(matching.id),
+              );
+            } else {
+              unawaited(
+                OrderSoundService.instance.stopPendingOrderAlert(matching.id),
+              );
+            }
+          }
+        }
       }
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -182,6 +214,11 @@ class _OrderWorkspaceState extends State<OrderWorkspace>
         final index = _orders.indexWhere((item) => item.id == updated.id);
         if (index >= 0) _orders[index] = updated;
       });
+      if (!updated.isPending) {
+        unawaited(
+          OrderSoundService.instance.stopPendingOrderAlert(updated.id),
+        );
+      }
       _message(
         payment
             ? (status == 'Paid' ? 'Payment received.' : 'Added to Pay Later.')
@@ -208,6 +245,16 @@ class _OrderWorkspaceState extends State<OrderWorkspace>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.canteens.isEmpty) {
+      if (_loading) return const Center(child: CircularProgressIndicator());
+      return const _OrderState(
+        icon: Icons.storefront_outlined,
+        title: 'Create a canteen before receiving orders.',
+      );
+    }
+    if (_canteenId == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
     if (_loading) return const Center(child: CircularProgressIndicator());
     if (_error != null)
       return _OrderState(
@@ -215,12 +262,6 @@ class _OrderWorkspaceState extends State<OrderWorkspace>
         title: _error!,
         action: _load,
       );
-    if (widget.canteens.isEmpty) {
-      return const _OrderState(
-        icon: Icons.storefront_outlined,
-        title: 'Create a canteen before receiving orders.',
-      );
-    }
 
     return RefreshIndicator(
       onRefresh: _load,
@@ -314,15 +355,9 @@ class _Toolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final selector = DropdownButtonFormField<String>(
-        initialValue: selectedId,
-        decoration: const InputDecoration(
-          labelText: 'Canteen',
-          prefixIcon: Icon(Icons.storefront_outlined),
-        ),
-        items: canteens
-            .map((c) => DropdownMenuItem(value: c.id, child: Text(c.name)))
-            .toList(),
+      final selector = CanteenSelector(
+        canteens: canteens,
+        selectedId: selectedId,
         onChanged: onChanged,
       );
       final title = const Column(

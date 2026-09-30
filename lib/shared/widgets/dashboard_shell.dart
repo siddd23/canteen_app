@@ -78,39 +78,9 @@ class DashboardShell extends StatelessWidget {
             surfaceTintColor: Colors.transparent,
             toolbarHeight: 66,
             titleSpacing: 16,
-            title: Row(
-              children: [
-                const _MobileBrandMark(),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        destinations[
-                          selectedIndex.clamp(0, destinations.length - 1).toInt()
-                        ].label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.25,
-                        ),
-                      ),
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            title: const Align(
+              alignment: Alignment.centerLeft,
+              child: _MobileBrandMark(),
             ),
             actions: actions,
             shape: const Border(
@@ -133,29 +103,11 @@ class _MobileBrandMark extends StatelessWidget {
   const _MobileBrandMark();
 
   @override
-  Widget build(BuildContext context) => Container(
-    width: 38,
-    height: 38,
-    decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [AppColors.primary, AppColors.primaryDark],
-      ),
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: [
-        BoxShadow(
-          color: AppColors.primary.withValues(alpha: 0.22),
-          blurRadius: 10,
-          offset: const Offset(0, 4),
-        ),
-      ],
-    ),
-    child: const Icon(
-      Icons.restaurant_menu_rounded,
-      color: AppColors.white,
-      size: 21,
-    ),
+  Widget build(BuildContext context) => Image.asset(
+    'assets/images/bookfood_logo_dark.png',
+    width: 104,
+    fit: BoxFit.contain,
+    semanticLabel: 'BookFood',
   );
 }
 
@@ -349,30 +301,16 @@ class _DesktopSidebar extends StatelessWidget {
           children: [
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _BrandMark(),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'CanteenFlow',
-                          style: TextStyle(
-                            color: AppColors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        Text(
-                          'Management platform',
-                          style: TextStyle(
-                            color: AppColors.sidebarMuted,
-                            fontSize: 11,
-                          ),
-                        ),
-                      ],
+                  SizedBox(height: 8),
+                  Text(
+                    'Management platform',
+                    style: TextStyle(
+                      color: AppColors.sidebarMuted,
+                      fontSize: 11,
                     ),
                   ),
                 ],
@@ -456,18 +394,11 @@ class _BrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: const Icon(
-        Icons.restaurant_menu_rounded,
-        color: AppColors.white,
-        size: 23,
-      ),
+    return Image.asset(
+      'assets/images/bookfood_logo_white.png',
+      width: 180,
+      fit: BoxFit.contain,
+      semanticLabel: 'BookFood',
     );
   }
 }

@@ -19,22 +19,15 @@ class WelcomeScreen extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 460),
                 child: Column(
                   children: [
-                    Container(
-                      width: 110,
-                      height: 110,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(32),
-                      ),
-                      child: const Icon(
-                        Icons.restaurant_rounded,
-                        size: 58,
-                        color: AppColors.primary,
-                      ),
+                    Image.asset(
+                      'assets/images/bookfood_logo_dark.png',
+                      width: 286,
+                      fit: BoxFit.contain,
+                      semanticLabel: 'BookFood',
                     ),
                     const SizedBox(height: 32),
                     Text(
-                      'Welcome to Canteen App',
+                      'Welcome to BookFood',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.headlineMedium
                           ?.copyWith(

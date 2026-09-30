@@ -5,6 +5,7 @@ import '../../../../core/utils/api_exception.dart';
 import '../../../../shared/models/canteen.dart';
 import '../../../../shared/models/sales_report.dart';
 import '../../../../shared/services/order_service.dart';
+import '../../../../shared/widgets/canteen_selector.dart';
 import '../../../../shared/widgets/dashboard_shell.dart';
 
 class SalesReportsWorkspace extends StatefulWidget {
@@ -229,18 +230,11 @@ class _ReportToolbar extends StatelessWidget {
       children: [
         SizedBox(
           width: 260,
-          child: DropdownButtonFormField<String>(
-            initialValue: canteenId,
-            decoration: const InputDecoration(labelText: 'Canteen'),
-            items: [
-              const DropdownMenuItem(
-                value: _SalesReportsWorkspaceState._all,
-                child: Text('All canteens'),
-              ),
-              ...canteens.map(
-                (c) => DropdownMenuItem(value: c.id, child: Text(c.name)),
-              ),
-            ],
+          child: CanteenSelector(
+            canteens: canteens,
+            selectedId: canteenId,
+            includeAll: true,
+            allValue: _SalesReportsWorkspaceState._all,
             onChanged: onCanteenChanged,
           ),
         ),

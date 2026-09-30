@@ -35,6 +35,7 @@ class OrderService {
   }
 
   Future<OrderHistoryResult> getOrderHistory({
+    String? officeId,
     String? canteenId,
     String? status,
     String? paymentStatus,
@@ -52,6 +53,7 @@ class OrderService {
     final response = await ApiService.instance.get(
       '${ApiConstants.orders}/history',
       queryParameters: {
+        if (officeId != null && officeId.isNotEmpty) 'officeId': officeId,
         if (canteenId != null && canteenId.isNotEmpty) 'canteenId': canteenId,
         if (status != null && status.isNotEmpty) 'status': status,
         if (paymentStatus != null && paymentStatus.isNotEmpty)
@@ -66,6 +68,31 @@ class OrderService {
     return OrderHistoryResult.fromJson(
       Map<String, dynamic>.from(response['data'] as Map? ?? {}),
     );
+  }
+
+  Future<List<CanteenOrder>> getOfficeStatement({
+    required String officeId,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+  }) async {
+    String date(DateTime value) =>
+        '${value.year.toString().padLeft(4, '0')}-'
+        '${value.month.toString().padLeft(2, '0')}-'
+        '${value.day.toString().padLeft(2, '0')}';
+    final response = await ApiService.instance.get(
+      '${ApiConstants.orders}/office-statement',
+      queryParameters: {
+        'officeId': officeId,
+        if (dateFrom != null) 'dateFrom': date(dateFrom),
+        if (dateTo != null) 'dateTo': date(dateTo),
+      },
+    );
+    final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
+    final rawOrders = data['orders'] as List? ?? const [];
+    return rawOrders
+        .whereType<Map>()
+        .map((item) => CanteenOrder.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
   }
 
   Future<OrderNotificationResult> getOrderNotifications({

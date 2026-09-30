@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_saver/file_saver.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
@@ -839,6 +840,29 @@ class _QrDialog extends StatelessWidget {
       );
     } catch (_) {}
 
+    Future<void> downloadQr() async {
+      if (bytes == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('QR image is unavailable.')),
+        );
+        return;
+      }
+      final qrBytes = bytes;
+      final safeName = office.companyName
+          .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
+          .replaceAll(RegExp(r'^_|_$'), '');
+      await FileSaver.instance.saveFile(
+        name: 'BookFood_QR_${safeName.isEmpty ? office.officeCode : safeName}',
+        bytes: qrBytes,
+        fileExtension: 'png',
+        mimeType: MimeType.png,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Office QR downloaded.')),
+      );
+    }
+
     return AlertDialog(
       title: Text(office.companyName),
       content: SizedBox(
@@ -895,6 +919,11 @@ class _QrDialog extends StatelessWidget {
           },
           icon: const Icon(Icons.content_copy_rounded, size: 18),
           label: const Text('Copy link'),
+        ),
+        FilledButton.icon(
+          onPressed: downloadQr,
+          icon: const Icon(Icons.download_rounded, size: 18),
+          label: const Text('Download QR'),
         ),
       ],
     );

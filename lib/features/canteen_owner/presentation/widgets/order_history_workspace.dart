@@ -1,11 +1,19 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/api_exception.dart';
 import '../../../../shared/models/canteen.dart';
 import '../../../../shared/models/order.dart';
 import '../../../../shared/models/order_history.dart';
+import '../../../../shared/models/office.dart';
+import '../../../../shared/services/office_service.dart';
 import '../../../../shared/services/order_service.dart';
+import '../../../../shared/widgets/canteen_selector.dart';
 import '../../../../shared/widgets/dashboard_shell.dart';
 
 class OrderHistoryWorkspace extends StatefulWidget {
@@ -40,12 +48,15 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
 
   final TextEditingController _searchController = TextEditingController();
   OrderHistoryResult? _result;
+  List<Office> _offices = [];
   String _canteenId = _all;
+  String _officeId = _all;
   String _status = _all;
   String _paymentStatus = _all;
   DateTimeRange? _dateRange;
   String? _error;
   bool _loading = true;
+  bool _exporting = false;
   int _page = 1;
 
   @override
@@ -55,7 +66,17 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
     if (initialId != null && widget.canteens.any((c) => c.id == initialId)) {
       _canteenId = initialId;
     }
+    _loadOffices();
     _load();
+  }
+
+  Future<void> _loadOffices() async {
+    try {
+      final offices = await OfficeService.instance.getMyOffices();
+      if (mounted) setState(() => _offices = offices);
+    } catch (_) {
+      // History remains usable even when the optional office filter fails.
+    }
   }
 
   @override
@@ -72,6 +93,7 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
     });
     try {
       final result = await OrderService.instance.getOrderHistory(
+        officeId: _officeId == _all ? null : _officeId,
         canteenId: _canteenId == _all ? null : _canteenId,
         status: _status == _all ? null : _status,
         paymentStatus: _paymentStatus == _all ? null : _paymentStatus,
@@ -99,6 +121,87 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
     }
   }
 
+  Future<void> _shareOfficeStatement() async {
+    if (_officeId == _all) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select an office before creating its statement.')),
+      );
+      return;
+    }
+    Office? office;
+    for (final item in _offices) {
+      if (item.id == _officeId) {
+        office = item;
+        break;
+      }
+    }
+    if (office == null) return;
+    setState(() => _exporting = true);
+    try {
+      final orders = await OrderService.instance.getOfficeStatement(
+        officeId: office.id,
+        dateFrom: _dateRange?.start,
+        dateTo: _dateRange?.end,
+      );
+      final total = orders
+          .where((order) => order.orderStatus == 'Delivered')
+          .fold<double>(0, (sum, order) => sum + order.grandTotal);
+      final paid = orders
+          .where((order) => order.paymentStatus == 'Paid')
+          .fold<double>(0, (sum, order) => sum + order.grandTotal);
+      final outstanding = orders
+          .where((order) => order.paymentStatus == 'PayLater')
+          .fold<double>(0, (sum, order) => sum + order.grandTotal);
+      final csv = StringBuffer()
+        ..writeln('BookFood Office Statement')
+        ..writeln('Office,${_csv(office.companyName)}')
+        ..writeln('Office code,${_csv(office.officeCode)}')
+        ..writeln('Period,${_csv(_dateRange == null ? 'All time' : '${_shortDate(_dateRange!.start)} - ${_shortDate(_dateRange!.end)}')}')
+        ..writeln('Orders,${orders.length}')
+        ..writeln('Delivered value,${total.toStringAsFixed(2)}')
+        ..writeln('Paid,${paid.toStringAsFixed(2)}')
+        ..writeln('Pay Later outstanding,${outstanding.toStringAsFixed(2)}')
+        ..writeln()
+        ..writeln('Date,Order,Employee,Mobile,Canteen,Status,Payment,Amount,Items');
+      for (final order in orders) {
+        csv.writeln([
+          _csv(_statementDate(order.createdAt)),
+          _csv(order.orderNumber),
+          _csv(order.customerName),
+          _csv(order.mobile),
+          _csv(order.canteenName),
+          _csv(order.orderStatus),
+          _csv(order.paymentStatus == 'PayLater' ? 'Pay Later' : order.paymentStatus),
+          order.grandTotal.toStringAsFixed(2),
+          _csv(order.items.map((item) => '${item.quantity} x ${item.name}').join('; ')),
+        ].join(','));
+      }
+      final fileName =
+          'BookFood_${office.officeCode}_${DateTime.now().millisecondsSinceEpoch}.csv';
+      await SharePlus.instance.share(
+        ShareParams(
+          title: '${office.companyName} statement',
+          text: 'BookFood office statement for ${office.companyName}',
+          files: [
+            XFile.fromData(
+              Uint8List.fromList(utf8.encode(csv.toString())),
+              mimeType: 'text/csv',
+              name: fileName,
+            ),
+          ],
+          fileNameOverrides: [fileName],
+        ),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
   Future<void> _pickDates() async {
     final now = DateTime.now();
     final selected = await showDateRangePicker(
@@ -117,6 +220,7 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
     _searchController.clear();
     setState(() {
       _canteenId = _all;
+      _officeId = _all;
       _status = _all;
       _paymentStatus = _all;
       _dateRange = null;
@@ -143,7 +247,9 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
           const SizedBox(height: 22),
           _HistoryFilters(
             canteens: widget.canteens,
+            offices: _offices,
             canteenId: _canteenId,
+            officeId: _officeId,
             status: _status,
             paymentStatus: _paymentStatus,
             dateRange: _dateRange,
@@ -152,6 +258,11 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
               if (value == null) return;
               setState(() => _canteenId = value);
               if (value != _all) widget.onCanteenChanged(value);
+              _load(page: 1);
+            },
+            onOfficeChanged: (value) {
+              if (value == null) return;
+              setState(() => _officeId = value);
               _load(page: 1);
             },
             onStatusChanged: (value) {
@@ -171,6 +282,8 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
               _load(page: 1);
             },
             onReset: _reset,
+            onShareStatement: _shareOfficeStatement,
+            exporting: _exporting,
           ),
           const SizedBox(height: 20),
           if (_loading)
@@ -243,33 +356,43 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
 class _HistoryFilters extends StatelessWidget {
   const _HistoryFilters({
     required this.canteens,
+    required this.offices,
     required this.canteenId,
+    required this.officeId,
     required this.status,
     required this.paymentStatus,
     required this.dateRange,
     required this.searchController,
     required this.onCanteenChanged,
+    required this.onOfficeChanged,
     required this.onStatusChanged,
     required this.onPaymentChanged,
     required this.onSearch,
     required this.onPickDates,
     required this.onClearDates,
     required this.onReset,
+    required this.onShareStatement,
+    required this.exporting,
   });
 
   final List<Canteen> canteens;
+  final List<Office> offices;
   final String canteenId;
+  final String officeId;
   final String status;
   final String paymentStatus;
   final DateTimeRange? dateRange;
   final TextEditingController searchController;
   final ValueChanged<String?> onCanteenChanged;
+  final ValueChanged<String?> onOfficeChanged;
   final ValueChanged<String?> onStatusChanged;
   final ValueChanged<String?> onPaymentChanged;
   final VoidCallback onSearch;
   final VoidCallback onPickDates;
   final VoidCallback onClearDates;
   final VoidCallback onReset;
+  final VoidCallback onShareStatement;
+  final bool exporting;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -313,18 +436,34 @@ class _HistoryFilters extends StatelessWidget {
                 SizedBox(
                   width: width,
                   child: DropdownButtonFormField<String>(
-                    initialValue: canteenId,
-                    decoration: const InputDecoration(labelText: 'Canteen'),
+                    initialValue: officeId,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Office',
+                      prefixIcon: Icon(Icons.business_outlined),
+                    ),
                     items: [
                       const DropdownMenuItem(
                         value: _OrderHistoryWorkspaceState._all,
-                        child: Text('All canteens'),
+                        child: Text('All offices'),
                       ),
-                      ...canteens.map(
-                        (c) =>
-                            DropdownMenuItem(value: c.id, child: Text(c.name)),
+                      ...offices.map(
+                        (office) => DropdownMenuItem(
+                          value: office.id,
+                          child: Text(office.companyName, overflow: TextOverflow.ellipsis),
+                        ),
                       ),
                     ],
+                    onChanged: onOfficeChanged,
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: CanteenSelector(
+                    canteens: canteens,
+                    selectedId: canteenId,
+                    includeAll: true,
+                    allValue: _OrderHistoryWorkspaceState._all,
                     onChanged: onCanteenChanged,
                   ),
                 ),
@@ -403,6 +542,23 @@ class _HistoryFilters extends StatelessWidget {
             const SizedBox(width: 8),
             TextButton(onPressed: onReset, child: const Text('Reset filters')),
           ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: officeId == _OrderHistoryWorkspaceState._all || exporting
+                ? null
+                : onShareStatement,
+            icon: exporting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.file_download_outlined),
+            label: Text(exporting ? 'Preparing statement...' : 'Create & share office statement'),
+          ),
         ),
       ],
     ),
@@ -555,3 +711,12 @@ String _dateTime(DateTime? value) {
   final minute = local.minute.toString().padLeft(2, '0');
   return '${local.day}/${local.month}/${local.year} · $hour:$minute ${local.hour >= 12 ? 'PM' : 'AM'}';
 }
+
+String _statementDate(DateTime? value) {
+  if (value == null) return '';
+  final local = value.toLocal();
+  return '${local.day.toString().padLeft(2, '0')}/'
+      '${local.month.toString().padLeft(2, '0')}/${local.year}';
+}
+
+String _csv(String value) => '"${value.replaceAll('"', '""')}"';

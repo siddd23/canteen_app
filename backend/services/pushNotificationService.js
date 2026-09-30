@@ -5,6 +5,7 @@ const {
   initializeApp,
 } = require("firebase-admin/app");
 const { getMessaging } = require("firebase-admin/messaging");
+const Canteen = require("../models/Canteen");
 const Owner = require("../models/Owner");
 
 const invalidTokenCodes = new Set([
@@ -52,7 +53,22 @@ const ensureFirebase = () => {
 const sendNewOrderPush = async (order) => {
   if (!ensureFirebase()) return { sent: 0, skipped: true };
 
-  const owner = await Owner.findById(order.ownerId).select("+fcmTokens").lean();
+  // Resolve ownership from the canteen selected at checkout. Do not broadcast
+  // or trust a caller-supplied owner when choosing notification recipients.
+  const canteen = await Canteen.findById(order.canteenId)
+    .select("ownerId")
+    .lean();
+  if (!canteen?.ownerId) return { sent: 0, skipped: true };
+
+  const targetOwnerId = canteen.ownerId;
+  if (String(order.ownerId) !== String(targetOwnerId)) {
+    console.error(
+      `Skipped push for ${order.orderNumber}: order owner does not match canteen owner`,
+    );
+    return { sent: 0, skipped: true };
+  }
+
+  const owner = await Owner.findById(targetOwnerId).select("+fcmTokens").lean();
   const tokens = [...new Set(owner?.fcmTokens || [])].slice(0, 500);
   if (tokens.length === 0) return { sent: 0, skipped: true };
 
@@ -71,8 +87,8 @@ const sendNewOrderPush = async (order) => {
     android: {
       priority: "high",
       notification: {
-        channelId: "new_orders",
-        sound: "default",
+        channelId: "new_orders_v2",
+        sound: "order_bell",
         priority: "high",
         visibility: "public",
       },
@@ -92,7 +108,7 @@ const sendNewOrderPush = async (order) => {
   });
 
   if (invalidTokens.length > 0) {
-    await Owner.findByIdAndUpdate(order.ownerId, {
+    await Owner.findByIdAndUpdate(targetOwnerId, {
       $pull: { fcmTokens: { $in: invalidTokens } },
     });
   }

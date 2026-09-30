@@ -33,6 +33,7 @@ const getOrderHistory = async (req, res, next) => {
     const limit = Number(req.query.limit || 20);
     const filter = { ownerId: req.user.id };
 
+    if (req.query.officeId) filter.officeId = req.query.officeId;
     if (req.query.canteenId) filter.canteenId = req.query.canteenId;
     if (req.query.status) filter.orderStatus = req.query.status;
     if (req.query.paymentStatus) {
@@ -93,6 +94,52 @@ const getOrderHistory = async (req, res, next) => {
           totalPages,
           hasPreviousPage: page > 1,
           hasNextPage: page < totalPages,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getOfficeStatement = async (req, res, next) => {
+  try {
+    const filter = { ownerId: req.user.id, officeId: req.query.officeId };
+    if (req.query.dateFrom || req.query.dateTo) {
+      filter.createdAt = {};
+      if (req.query.dateFrom) {
+        filter.createdAt.$gte = new Date(`${req.query.dateFrom}T00:00:00+05:30`);
+      }
+      if (req.query.dateTo) {
+        filter.createdAt.$lte = new Date(`${req.query.dateTo}T23:59:59.999+05:30`);
+      }
+      if (
+        filter.createdAt.$gte &&
+        filter.createdAt.$lte &&
+        filter.createdAt.$gte > filter.createdAt.$lte
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "From date cannot be later than to date",
+        });
+      }
+    }
+    const orders = await Order.find(filter).sort({ createdAt: -1 }).lean();
+    return res.status(200).json({
+      success: true,
+      data: {
+        orders,
+        summary: {
+          orderCount: orders.length,
+          totalAmount: orders
+            .filter((order) => order.orderStatus === "Delivered")
+            .reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
+          paidAmount: orders
+            .filter((order) => order.paymentStatus === "Paid")
+            .reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
+          outstandingAmount: orders
+            .filter((order) => order.paymentStatus === "PayLater")
+            .reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
         },
       },
     });
@@ -617,6 +664,7 @@ const settleEmployeePayLater = async (req, res, next) => {
 module.exports = {
   getSalesReport,
   getOrderHistory,
+  getOfficeStatement,
   getDashboardSummary,
   getOrderNotifications,
   getMyOrders,
