@@ -261,7 +261,13 @@ const getSalesReport = async (req, res, next) => {
               $group: {
                 _id: {
                   officeId: "$officeId",
-                  companyName: "$officeSnapshot.companyName",
+                  companyName: {
+                    $cond: [
+                      { $eq: ["$orderSource", "canteen_master_qr"] },
+                      "Direct Master QR",
+                      "$officeSnapshot.companyName",
+                    ],
+                  },
                 },
                 orderCount: { $sum: 1 },
                 sales: { $sum: "$grandTotal" },

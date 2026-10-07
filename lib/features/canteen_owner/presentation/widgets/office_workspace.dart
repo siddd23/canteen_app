@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_saver/file_saver.dart';
+import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
@@ -840,7 +840,7 @@ class _QrDialog extends StatelessWidget {
       );
     } catch (_) {}
 
-    Future<void> downloadQr() async {
+    Future<void> saveQrToGallery() async {
       if (bytes == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('QR image is unavailable.')),
@@ -848,23 +848,52 @@ class _QrDialog extends StatelessWidget {
         return;
       }
       final qrBytes = bytes;
-      final safeName = office.companyName
-          .replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '_')
-          .replaceAll(RegExp(r'^_|_$'), '');
-      await FileSaver.instance.saveFile(
-        name: 'BookFood_QR_${safeName.isEmpty ? office.officeCode : safeName}',
-        bytes: qrBytes,
-        fileExtension: 'png',
-        mimeType: MimeType.png,
-      );
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Office QR downloaded.')),
-      );
+      try {
+        if (!await Gal.hasAccess()) {
+          await Gal.requestAccess();
+        }
+        if (!await Gal.hasAccess()) {
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Allow photo access to save the QR in Gallery.'),
+            ),
+          );
+          return;
+        }
+        await Gal.putImageBytes(qrBytes);
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Office QR saved to Gallery.')),
+        );
+      } catch (_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to save QR. Check photo permissions and try again.'),
+          ),
+        );
+      }
     }
 
     return AlertDialog(
-      title: Text(office.companyName),
+      titlePadding: const EdgeInsets.fromLTRB(24, 18, 12, 0),
+      title: Row(
+        children: [
+          Expanded(
+            child: Text(
+              office.companyName,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          IconButton(
+            tooltip: 'Close',
+            onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ],
+      ),
       content: SizedBox(
         width: 380,
         child: Column(
@@ -901,31 +930,38 @@ class _QrDialog extends StatelessWidget {
                 fontSize: 12,
               ),
             ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      await Clipboard.setData(
+                        ClipboardData(text: office.orderingUrl),
+                      );
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Ordering link copied')),
+                      );
+                    },
+                    icon: const Icon(Icons.content_copy_rounded, size: 18),
+                    label: const Text('Copy link'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: saveQrToGallery,
+                    icon: const Icon(Icons.photo_library_outlined, size: 18),
+                    label: const Text('Save QR'),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Close'),
-        ),
-        FilledButton.icon(
-          onPressed: () async {
-            await Clipboard.setData(ClipboardData(text: office.orderingUrl));
-            if (!context.mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Ordering link copied')),
-            );
-          },
-          icon: const Icon(Icons.content_copy_rounded, size: 18),
-          label: const Text('Copy link'),
-        ),
-        FilledButton.icon(
-          onPressed: downloadQr,
-          icon: const Icon(Icons.download_rounded, size: 18),
-          label: const Text('Download QR'),
-        ),
-      ],
+      actions: const [],
     );
   }
 }

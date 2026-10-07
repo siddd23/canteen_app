@@ -8,6 +8,7 @@ const { emitNewOrder } = require("../services/realtimeService");
 const { sendNewOrderPush } = require("../services/pushNotificationService");
 
 const normalizeOfficeCode = (value) => value.trim().toUpperCase();
+const normalizeCanteenCode = (value) => value.trim().toUpperCase();
 
 /*
  * GET /api/public/offices/:officeCode
@@ -307,6 +308,188 @@ const createPublicOrder = async (req, res, next) => {
   }
 };
 
+/* GET /api/public/canteens/:publicCode */
+const resolveCanteenMasterQr = async (req, res, next) => {
+  try {
+    const canteen = await Canteen.findOne({
+      publicCode: normalizeCanteenCode(req.params.publicCode),
+      status: "Active",
+      masterQrEnabled: true,
+    })
+      .select("name address city contactNumber openingTime closingTime publicCode")
+      .lean();
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "This canteen master QR is invalid or currently paused",
+      });
+    }
+
+    return res.status(200).json({ success: true, data: { canteen } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* GET /api/public/canteens/:publicCode/menu */
+const getMasterCanteenMenu = async (req, res, next) => {
+  try {
+    const canteen = await Canteen.findOne({
+      publicCode: normalizeCanteenCode(req.params.publicCode),
+      status: "Active",
+      masterQrEnabled: true,
+    })
+      .select("name address city contactNumber openingTime closingTime publicCode")
+      .lean();
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "This canteen is currently unavailable",
+      });
+    }
+
+    const categories = await MenuCategory.find({
+      canteenId: canteen._id,
+      status: "Active",
+    }).select("name displayOrder status").sort({ displayOrder: 1, createdAt: 1 }).lean();
+    const categoryIds = categories.map((category) => category._id);
+    const items = await MenuItem.find({
+      canteenId: canteen._id,
+      categoryId: { $in: categoryIds },
+      isAvailable: true,
+    })
+      .select("categoryId name description price foodType preparationTime imageUrl isAvailable")
+      .sort({ categoryId: 1, name: 1 })
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: { orderSource: "canteen_master_qr", canteen, categories, items },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/* POST /api/public/canteens/:publicCode/orders */
+const createMasterQrOrder = async (req, res, next) => {
+  try {
+    const canteen = await Canteen.findOne({
+      publicCode: normalizeCanteenCode(req.params.publicCode),
+      status: "Active",
+      masterQrEnabled: true,
+    }).select("ownerId name publicCode").lean();
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "This canteen is currently unavailable",
+      });
+    }
+
+    const { customerName, mobile, customerNote = "", items, deliveryAddress } = req.body;
+    const itemIds = items.map((item) => item.menuItemId);
+    const uniqueItemIds = [...new Set(itemIds.map(String))];
+    if (uniqueItemIds.length !== itemIds.length) {
+      return res.status(400).json({ success: false, message: "Duplicate menu items are not allowed" });
+    }
+
+    const menuItems = await MenuItem.find({
+      _id: { $in: uniqueItemIds },
+      ownerId: canteen.ownerId,
+      canteenId: canteen._id,
+      isAvailable: true,
+    })
+      .select("name price preparationTime categoryId")
+      .populate({ path: "categoryId", match: { status: "Active" }, select: "_id" })
+      .lean();
+    const availableItems = menuItems.filter((item) => item.categoryId);
+    if (availableItems.length !== uniqueItemIds.length) {
+      return res.status(409).json({
+        success: false,
+        message: "One or more cart items are no longer available. Refresh the menu and try again.",
+      });
+    }
+
+    const menuItemById = new Map(availableItems.map((item) => [String(item._id), item]));
+    const orderItems = items.map((requestedItem) => {
+      const menuItem = menuItemById.get(String(requestedItem.menuItemId));
+      const quantity = Number(requestedItem.quantity);
+      const unitPrice = Number(menuItem.price);
+      return {
+        menuItemId: menuItem._id,
+        name: menuItem.name,
+        unitPrice,
+        quantity,
+        lineTotal: unitPrice * quantity,
+      };
+    });
+    const subtotal = orderItems.reduce((sum, item) => sum + item.lineTotal, 0);
+    const itemCount = orderItems.reduce((sum, item) => sum + item.quantity, 0);
+    const estimatedPreparationTime = availableItems.reduce(
+      (longest, item) => Math.max(longest, Number(item.preparationTime || 0)),
+      0,
+    );
+    const trackingToken = createTrackingToken();
+    const cleanAddress = {
+      buildingName: deliveryAddress.buildingName.trim(),
+      floorOrRoom: deliveryAddress.floorOrRoom.trim(),
+      streetArea: deliveryAddress.streetArea.trim(),
+      landmark: (deliveryAddress.landmark || "").trim(),
+      city: deliveryAddress.city.trim(),
+      pincode: deliveryAddress.pincode.trim(),
+    };
+    const order = await Order.create({
+      orderNumber: createOrderNumber(),
+      trackingTokenHash: hashTrackingToken(trackingToken),
+      trackingTokenIssuedAt: new Date(),
+      ownerId: canteen.ownerId,
+      orderSource: "canteen_master_qr",
+      canteenId: canteen._id,
+      canteenSnapshot: { name: canteen.name },
+      deliveryAddress: cleanAddress,
+      customerName: customerName.trim(),
+      mobile: mobile.trim(),
+      customerNote: customerNote.trim(),
+      items: orderItems,
+      itemCount,
+      subtotal,
+      grandTotal: subtotal,
+      estimatedPreparationTime,
+    });
+
+    emitNewOrder(order);
+    sendNewOrderPush(order).catch((error) => {
+      console.error(`Unable to send new-order push notification: ${error.message}`);
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Order placed successfully",
+      data: {
+        order: {
+          id: order._id,
+          orderNumber: order.orderNumber,
+          customerName: order.customerName,
+          itemCount: order.itemCount,
+          grandTotal: order.grandTotal,
+          estimatedPreparationTime: order.estimatedPreparationTime,
+          orderStatus: order.orderStatus,
+          paymentStatus: order.paymentStatus,
+          canteenName: order.canteenSnapshot.name,
+          createdAt: order.createdAt,
+          trackingToken,
+          trackingPath: `/track/${order.orderNumber}?token=${trackingToken}`,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 /*
  * GET /api/public/orders/:orderNumber/track?token=...
  * Public status lookup protected by a high-entropy token issued at checkout.
@@ -318,7 +501,7 @@ const trackPublicOrder = async (req, res, next) => {
       trackingTokenHash: hashTrackingToken(req.query.token),
     })
       .select(
-        "orderNumber officeSnapshot canteenSnapshot customerName items itemCount grandTotal estimatedPreparationTime orderStatus paymentStatus acceptedAt deliveredAt rejectedAt cancelledAt createdAt updatedAt",
+        "orderNumber orderSource officeSnapshot deliveryAddress canteenSnapshot customerName items itemCount grandTotal estimatedPreparationTime orderStatus paymentStatus acceptedAt deliveredAt rejectedAt cancelledAt createdAt updatedAt",
       )
       .lean();
 
@@ -343,4 +526,7 @@ module.exports = {
   getPublicCanteenMenu,
   createPublicOrder,
   trackPublicOrder,
+  resolveCanteenMasterQr,
+  getMasterCanteenMenu,
+  createMasterQrOrder,
 };

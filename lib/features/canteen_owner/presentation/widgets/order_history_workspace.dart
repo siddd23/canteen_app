@@ -1,9 +1,8 @@
-import 'dart:convert';
-import 'dart:typed_data';
-
-import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:flutter/services.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/utils/api_exception.dart';
@@ -135,11 +134,12 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
         break;
       }
     }
-    if (office == null) return;
+    final selectedOffice = office;
+    if (selectedOffice == null) return;
     setState(() => _exporting = true);
     try {
       final orders = await OrderService.instance.getOfficeStatement(
-        officeId: office.id,
+        officeId: selectedOffice.id,
         dateFrom: _dateRange?.start,
         dateTo: _dateRange?.end,
       );
@@ -152,50 +152,297 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
       final outstanding = orders
           .where((order) => order.paymentStatus == 'PayLater')
           .fold<double>(0, (sum, order) => sum + order.grandTotal);
-      final csv = StringBuffer()
-        ..writeln('BookFood Office Statement')
-        ..writeln('Office,${_csv(office.companyName)}')
-        ..writeln('Office code,${_csv(office.officeCode)}')
-        ..writeln('Period,${_csv(_dateRange == null ? 'All time' : '${_shortDate(_dateRange!.start)} - ${_shortDate(_dateRange!.end)}')}')
-        ..writeln('Orders,${orders.length}')
-        ..writeln('Delivered value,${total.toStringAsFixed(2)}')
-        ..writeln('Paid,${paid.toStringAsFixed(2)}')
-        ..writeln('Pay Later outstanding,${outstanding.toStringAsFixed(2)}')
-        ..writeln()
-        ..writeln('Date,Order,Employee,Mobile,Canteen,Status,Payment,Amount,Items');
-      for (final order in orders) {
-        csv.writeln([
-          _csv(_statementDate(order.createdAt)),
-          _csv(order.orderNumber),
-          _csv(order.customerName),
-          _csv(order.mobile),
-          _csv(order.canteenName),
-          _csv(order.orderStatus),
-          _csv(order.paymentStatus == 'PayLater' ? 'Pay Later' : order.paymentStatus),
-          order.grandTotal.toStringAsFixed(2),
-          _csv(order.items.map((item) => '${item.quantity} x ${item.name}').join('; ')),
-        ].join(','));
+      pw.MemoryImage? logo;
+      try {
+        final logoData = await rootBundle.load(
+          'assets/images/bookfood_logo_dark.png',
+        );
+        logo = pw.MemoryImage(logoData.buffer.asUint8List());
+      } catch (_) {
+        // The PDF still renders a clean text logo if the optional image asset
+        // is unavailable in an older installation.
       }
-      final fileName =
-          'BookFood_${office.officeCode}_${DateTime.now().millisecondsSinceEpoch}.csv';
-      await SharePlus.instance.share(
-        ShareParams(
-          title: '${office.companyName} statement',
-          text: 'BookFood office statement for ${office.companyName}',
-          files: [
-            XFile.fromData(
-              Uint8List.fromList(utf8.encode(csv.toString())),
-              mimeType: 'text/csv',
-              name: fileName,
+
+      final pdf = pw.Document(
+        title: 'BookFood office statement - ${selectedOffice.companyName}',
+        author: 'BookFood',
+        subject: 'Office order and payment statement',
+      );
+      const ink = PdfColor.fromInt(0xFF151515);
+      const muted = PdfColor.fromInt(0xFF666666);
+      const line = PdfColor.fromInt(0xFFE2E2E2);
+      const soft = PdfColor.fromInt(0xFFF5F5F5);
+      const accent = PdfColor.fromInt(0xFF111111);
+      final period = _dateRange == null
+          ? 'All time'
+          : '${_shortDate(_dateRange!.start)} - ${_shortDate(_dateRange!.end)}';
+      final generatedAt = _pdfDateTime(DateTime.now());
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.fromLTRB(34, 34, 34, 38),
+          theme: pw.ThemeData.withFont(
+            base: pw.Font.helvetica(),
+            bold: pw.Font.helveticaBold(),
+          ),
+          header: (context) => pw.Column(
+            children: [
+              pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  if (logo != null)
+                    pw.SizedBox(
+                      width: 142,
+                      height: 44,
+                      child: pw.Image(logo, fit: pw.BoxFit.contain),
+                    )
+                  else
+                    pw.Text(
+                      'BookFood.',
+                      style: pw.TextStyle(
+                        fontSize: 26,
+                        fontWeight: pw.FontWeight.bold,
+                        color: ink,
+                      ),
+                    ),
+                  pw.Spacer(),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        'OFFICE STATEMENT',
+                        style: pw.TextStyle(
+                          fontSize: 15,
+                          fontWeight: pw.FontWeight.bold,
+                          letterSpacing: 1.2,
+                          color: ink,
+                        ),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        'Order Smart. Eat Better.',
+                        style: const pw.TextStyle(fontSize: 9, color: muted),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              pw.SizedBox(height: 12),
+              pw.Container(height: 2, color: accent),
+              pw.SizedBox(height: 18),
+            ],
+          ),
+          footer: (context) => pw.Column(
+            children: [
+              pw.Container(height: 0.7, color: line),
+              pw.SizedBox(height: 7),
+              pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: pw.Text(
+                      'Generated securely by BookFood',
+                      style: const pw.TextStyle(fontSize: 8, color: muted),
+                    ),
+                  ),
+                  pw.Text(
+                    'Page ${context.pageNumber} of ${context.pagesCount}',
+                    style: const pw.TextStyle(fontSize: 8, color: muted),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          build: (context) => [
+            pw.Container(
+              padding: const pw.EdgeInsets.all(16),
+              decoration: pw.BoxDecoration(
+                color: soft,
+                borderRadius: pw.BorderRadius.circular(8),
+                border: pw.Border.all(color: line),
+              ),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        _pdfLabel('STATEMENT FOR'),
+                        pw.SizedBox(height: 5),
+                        pw.Text(
+                          selectedOffice.companyName,
+                          style: pw.TextStyle(
+                            fontSize: 16,
+                            fontWeight: pw.FontWeight.bold,
+                            color: ink,
+                          ),
+                        ),
+                        pw.SizedBox(height: 4),
+                        pw.Text(
+                          selectedOffice.locationLine,
+                          style: const pw.TextStyle(fontSize: 9, color: muted),
+                        ),
+                        pw.SizedBox(height: 2),
+                        pw.Text(
+                          'Office code: ${selectedOffice.officeCode}',
+                          style: const pw.TextStyle(fontSize: 9, color: muted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(width: 20),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      _pdfMeta('Period', period),
+                      pw.SizedBox(height: 7),
+                      _pdfMeta('Generated', generatedAt),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 18),
+            pw.Row(
+              children: [
+                _pdfSummaryCard('ORDERS', '${orders.length}'),
+                pw.SizedBox(width: 9),
+                _pdfSummaryCard('DELIVERED VALUE', 'INR ${total.toStringAsFixed(2)}'),
+                pw.SizedBox(width: 9),
+                _pdfSummaryCard('PAID', 'INR ${paid.toStringAsFixed(2)}'),
+                pw.SizedBox(width: 9),
+                _pdfSummaryCard(
+                  'OUTSTANDING',
+                  'INR ${outstanding.toStringAsFixed(2)}',
+                ),
+              ],
+            ),
+            pw.SizedBox(height: 22),
+            pw.Text(
+              'ORDER DETAILS',
+              style: pw.TextStyle(
+                fontSize: 11,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: .8,
+                color: ink,
+              ),
+            ),
+            pw.SizedBox(height: 9),
+            if (orders.isEmpty)
+              pw.Container(
+                width: double.infinity,
+                padding: const pw.EdgeInsets.all(24),
+                decoration: pw.BoxDecoration(
+                  color: soft,
+                  border: pw.Border.all(color: line),
+                  borderRadius: pw.BorderRadius.circular(8),
+                ),
+                child: pw.Center(
+                  child: pw.Text(
+                    'No orders found for the selected period.',
+                    style: const pw.TextStyle(fontSize: 10, color: muted),
+                  ),
+                ),
+              )
+            else
+              pw.TableHelper.fromTextArray(
+                headers: const [
+                  'Date',
+                  'Order / Items',
+                  'Employee',
+                  'Canteen',
+                  'Payment',
+                  'Amount',
+                ],
+                data: orders
+                    .map(
+                      (order) => [
+                        _statementDate(order.createdAt),
+                        '${order.orderNumber}\n${order.items.map((item) => '${item.quantity} x ${item.name}').join(', ')}\n${order.orderStatus}',
+                        '${order.customerName}\n${order.mobile}',
+                        order.canteenName,
+                        order.paymentStatus == 'PayLater'
+                            ? 'Pay Later'
+                            : order.paymentStatus,
+                        'INR ${order.grandTotal.toStringAsFixed(2)}',
+                      ],
+                    )
+                    .toList(),
+                columnWidths: {
+                  0: const pw.FlexColumnWidth(.75),
+                  1: const pw.FlexColumnWidth(1.8),
+                  2: const pw.FlexColumnWidth(1.25),
+                  3: const pw.FlexColumnWidth(1.05),
+                  4: const pw.FlexColumnWidth(.85),
+                  5: const pw.FlexColumnWidth(.9),
+                },
+                headerDecoration: const pw.BoxDecoration(color: ink),
+                headerStyle: pw.TextStyle(
+                  color: PdfColors.white,
+                  fontSize: 8,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+                cellStyle: const pw.TextStyle(fontSize: 7.5, color: ink),
+                cellPadding: const pw.EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 7,
+                ),
+                border: pw.TableBorder.all(color: line, width: .6),
+                oddRowDecoration: const pw.BoxDecoration(color: soft),
+              ),
+            pw.SizedBox(height: 20),
+            pw.Container(
+              alignment: pw.Alignment.centerRight,
+              child: pw.Container(
+                width: 225,
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: ink, width: 1.2),
+                  borderRadius: pw.BorderRadius.circular(6),
+                ),
+                child: pw.Column(
+                  children: [
+                    _pdfTotalRow('Delivered value', total),
+                    pw.SizedBox(height: 6),
+                    _pdfTotalRow('Paid amount', paid),
+                    pw.Divider(color: line, height: 14),
+                    _pdfTotalRow(
+                      'Pay Later outstanding',
+                      outstanding,
+                      bold: true,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            pw.SizedBox(height: 18),
+            pw.Text(
+              'This computer-generated statement is based on orders recorded in BookFood. Please contact the canteen owner for reconciliation queries.',
+              style: const pw.TextStyle(fontSize: 8, color: muted),
             ),
           ],
-          fileNameOverrides: [fileName],
         ),
+      );
+
+      final fileName =
+          'BookFood_${selectedOffice.officeCode}_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      await Printing.sharePdf(
+        bytes: await pdf.save(),
+        filename: fileName,
       );
     } on ApiException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to create the PDF statement. Please try again.'),
+          backgroundColor: AppColors.error,
+        ),
       );
     } finally {
       if (mounted) setState(() => _exporting = false);
@@ -556,8 +803,12 @@ class _HistoryFilters extends StatelessWidget {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.file_download_outlined),
-            label: Text(exporting ? 'Preparing statement...' : 'Create & share office statement'),
+                : const Icon(Icons.picture_as_pdf_outlined),
+            label: Text(
+              exporting
+                  ? 'Preparing PDF statement...'
+                  : 'Generate & share PDF statement',
+            ),
           ),
         ),
       ],
@@ -600,7 +851,10 @@ class _HistoryOrderCard extends StatelessWidget {
     subtitle: Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Text(
-        '${order.customerName} · ${order.mobile}\n${order.canteenName} · ${order.companyName}\n${_dateTime(order.createdAt)}',
+        '${order.customerName} · ${order.mobile}\n'
+        '${order.canteenName} · ${order.isMasterQrOrder ? 'Master QR' : order.companyName}\n'
+        '${order.isMasterQrOrder ? order.deliveryAddressLine : ''}'
+        '${order.isMasterQrOrder ? '\n' : ''}${_dateTime(order.createdAt)}',
       ),
     ),
     trailing: Wrap(
@@ -719,4 +973,83 @@ String _statementDate(DateTime? value) {
       '${local.month.toString().padLeft(2, '0')}/${local.year}';
 }
 
-String _csv(String value) => '"${value.replaceAll('"', '""')}"';
+pw.Widget _pdfLabel(String value) => pw.Text(
+      value,
+      style: pw.TextStyle(
+        fontSize: 8,
+        fontWeight: pw.FontWeight.bold,
+        letterSpacing: .8,
+        color: const PdfColor.fromInt(0xFF666666),
+      ),
+    );
+
+pw.Widget _pdfMeta(String label, String value) => pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.end,
+      children: [
+        _pdfLabel(label.toUpperCase()),
+        pw.SizedBox(height: 2),
+        pw.Text(
+          value,
+          style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold),
+        ),
+      ],
+    );
+
+pw.Widget _pdfSummaryCard(String label, String value) => pw.Expanded(
+      child: pw.Container(
+        height: 58,
+        padding: const pw.EdgeInsets.all(9),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: const PdfColor.fromInt(0xFFE2E2E2)),
+          borderRadius: pw.BorderRadius.circular(6),
+        ),
+        child: pw.Column(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            _pdfLabel(label),
+            pw.SizedBox(height: 5),
+            pw.FittedBox(
+              child: pw.Text(
+                value,
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+pw.Widget _pdfTotalRow(String label, double value, {bool bold = false}) =>
+    pw.Row(
+      children: [
+        pw.Expanded(
+          child: pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: 9,
+              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+        pw.Text(
+          'INR ${value.toStringAsFixed(2)}',
+          style: pw.TextStyle(
+            fontSize: 9,
+            fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          ),
+        ),
+      ],
+    );
+
+String _pdfDateTime(DateTime value) {
+  final local = value.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '${local.day.toString().padLeft(2, '0')}/'
+      '${local.month.toString().padLeft(2, '0')}/${local.year} '
+      '$hour:$minute ${local.hour >= 12 ? 'PM' : 'AM'}';
+}

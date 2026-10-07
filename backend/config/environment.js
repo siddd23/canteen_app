@@ -49,6 +49,11 @@ const validateEnvironment = () => {
       throw new Error("APP_BASE_URL must be a valid HTTPS URL in production");
     }
 
+    if (process.env.ORDERING_WEB_URL &&
+        !isValidUrl(process.env.ORDERING_WEB_URL, ["https:"])) {
+      throw new Error("ORDERING_WEB_URL must be a valid HTTPS URL in production");
+    }
+
     if (!isValidUrl(process.env.MONGODB_URI, ["mongodb:", "mongodb+srv:"])) {
       throw new Error("MONGODB_URI must be a valid MongoDB connection URL");
     }

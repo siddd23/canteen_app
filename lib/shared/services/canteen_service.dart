@@ -50,4 +50,18 @@ class CanteenService {
         )
         .toList();
   }
+
+  Future<Canteen> updateMasterQrStatus({
+    required String canteenId,
+    required bool enabled,
+  }) async {
+    final response = await ApiService.instance.patch(
+      '${ApiConstants.canteens}/$canteenId/master-qr/status',
+      body: {'enabled': enabled},
+    );
+    final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
+    return Canteen.fromJson(
+      Map<String, dynamic>.from(data['canteen'] as Map? ?? {}),
+    );
+  }
 }

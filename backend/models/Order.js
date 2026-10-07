@@ -42,10 +42,19 @@ const orderSchema = new mongoose.Schema(
       index: true,
       immutable: true,
     },
+    orderSource: {
+      type: String,
+      enum: ["office_qr", "canteen_master_qr"],
+      default: "office_qr",
+      index: true,
+      immutable: true,
+    },
     officeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Office",
-      required: true,
+      required() {
+        return this.orderSource === "office_qr";
+      },
       index: true,
       immutable: true,
     },
@@ -57,12 +66,20 @@ const orderSchema = new mongoose.Schema(
       immutable: true,
     },
     officeSnapshot: {
-      companyName: { type: String, required: true },
-      officeCode: { type: String, required: true },
+      companyName: { type: String, default: "" },
+      officeCode: { type: String, default: "" },
       building: { type: String, default: "" },
       floor: { type: String, default: "" },
-      address: { type: String, required: true },
-      city: { type: String, required: true },
+      address: { type: String, default: "" },
+      city: { type: String, default: "" },
+    },
+    deliveryAddress: {
+      buildingName: { type: String, trim: true, default: "" },
+      floorOrRoom: { type: String, trim: true, default: "" },
+      streetArea: { type: String, trim: true, default: "" },
+      landmark: { type: String, trim: true, default: "" },
+      city: { type: String, trim: true, default: "" },
+      pincode: { type: String, trim: true, default: "" },
     },
     canteenSnapshot: {
       name: { type: String, required: true },

@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gal/gal.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
@@ -413,6 +416,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
     await _loadCanteens();
   }
 
+  Future<void> _showMasterQr(Canteen canteen) async {
+    final updated = await showDialog<Canteen>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => _MasterQrDialog(canteen: canteen),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      final index = _canteens.indexWhere((item) => item.id == updated.id);
+      if (index >= 0) _canteens[index] = updated;
+    });
+  }
+
   Future<void> _loadOwnerPreferences() async {
     try {
       final settings = await OwnerAccountService.instance.getProfile();
@@ -734,6 +750,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
                 final actions = _QuickActionsCard(
                   onOrders: () => _selectNavigation(2),
                   onMenu: () => _selectNavigation(3),
+                  onMasterQr: () => _showMasterQr(canteen),
                   onAddCanteen: () => context.push(AppRoutes.createCanteen),
                 );
 
@@ -1256,11 +1273,13 @@ class _QuickActionsCard extends StatelessWidget {
   const _QuickActionsCard({
     required this.onOrders,
     required this.onMenu,
+    required this.onMasterQr,
     required this.onAddCanteen,
   });
 
   final VoidCallback onOrders;
   final VoidCallback onMenu;
+  final VoidCallback onMasterQr;
   final VoidCallback onAddCanteen;
 
   @override
@@ -1281,12 +1300,185 @@ class _QuickActionsCard extends StatelessWidget {
             onTap: onMenu,
           ),
           _ActionTile(
+            icon: Icons.qr_code_2_rounded,
+            title: 'Master ordering QR',
+            onTap: onMasterQr,
+          ),
+          _ActionTile(
             icon: Icons.add_business_outlined,
             title: 'Add another canteen',
             onTap: onAddCanteen,
             showDivider: false,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _MasterQrDialog extends StatefulWidget {
+  const _MasterQrDialog({required this.canteen});
+
+  final Canteen canteen;
+
+  @override
+  State<_MasterQrDialog> createState() => _MasterQrDialogState();
+}
+
+class _MasterQrDialogState extends State<_MasterQrDialog> {
+  late Canteen _canteen;
+  bool _updating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _canteen = widget.canteen;
+  }
+
+  Uint8List? get _qrBytes {
+    try {
+      final value = _canteen.masterQrCode;
+      return base64Decode(value.contains(',') ? value.split(',').last : value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _saveQr() async {
+    final bytes = _qrBytes;
+    if (bytes == null) return;
+    try {
+      if (!await Gal.hasAccess()) await Gal.requestAccess();
+      if (!await Gal.hasAccess()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Allow photo access to save the QR.')),
+        );
+        return;
+      }
+      await Gal.putImageBytes(bytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Master QR saved to Gallery.')),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to save the master QR.')),
+      );
+    }
+  }
+
+  Future<void> _toggleStatus(bool enabled) async {
+    setState(() => _updating = true);
+    try {
+      final updated = await CanteenService.instance.updateMasterQrStatus(
+        canteenId: _canteen.id,
+        enabled: enabled,
+      );
+      if (mounted) setState(() => _canteen = updated);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+      );
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bytes = _qrBytes;
+    return AlertDialog(
+      titlePadding: const EdgeInsets.fromLTRB(24, 18, 12, 0),
+      title: Row(
+        children: [
+          const Expanded(child: Text('Master ordering QR')),
+          IconButton(
+            onPressed: () => Navigator.pop(context, _canteen),
+            icon: const Icon(Icons.close_rounded),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: 390,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _canteen.name,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _canteen.publicCode,
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: .8,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                width: 260,
+                height: 260,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: bytes == null
+                    ? const Icon(Icons.qr_code_2_rounded, size: 150)
+                    : Image.memory(bytes),
+              ),
+              const SizedBox(height: 12),
+              SelectableText(
+                _canteen.masterOrderingUrl,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Accept orders from this QR'),
+                subtitle: Text(_canteen.masterQrEnabled ? 'Active' : 'Paused'),
+                value: _canteen.masterQrEnabled,
+                onChanged: _updating ? null : _toggleStatus,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: _canteen.masterOrderingUrl),
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Master ordering link copied.')),
+                        );
+                      },
+                      icon: const Icon(Icons.content_copy_rounded),
+                      label: const Text('Copy link'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: bytes == null ? null : _saveQr,
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Save QR'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

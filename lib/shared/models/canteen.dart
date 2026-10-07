@@ -9,6 +9,10 @@ class Canteen {
     required this.openingTime,
     required this.closingTime,
     required this.status,
+    required this.publicCode,
+    required this.masterOrderingUrl,
+    required this.masterQrCode,
+    required this.masterQrEnabled,
   });
 
   final String id;
@@ -20,6 +24,10 @@ class Canteen {
   final String openingTime;
   final String closingTime;
   final String status;
+  final String publicCode;
+  final String masterOrderingUrl;
+  final String masterQrCode;
+  final bool masterQrEnabled;
 
   factory Canteen.fromJson(Map<String, dynamic> json) {
     return Canteen(
@@ -32,6 +40,10 @@ class Canteen {
       openingTime: json['openingTime']?.toString() ?? '',
       closingTime: json['closingTime']?.toString() ?? '',
       status: json['status']?.toString() ?? 'Active',
+      publicCode: json['publicCode']?.toString() ?? '',
+      masterOrderingUrl: json['masterOrderingUrl']?.toString() ?? '',
+      masterQrCode: json['masterQrCode']?.toString() ?? '',
+      masterQrEnabled: json['masterQrEnabled'] as bool? ?? true,
     );
   }
 }

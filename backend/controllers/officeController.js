@@ -79,7 +79,9 @@ const createOffice = async (req, res, next) => {
     const officeCode = await createUniqueOfficeCode();
 
     const applicationUrl = (
-      process.env.APP_BASE_URL || "http://localhost:3000"
+      process.env.ORDERING_WEB_URL ||
+      process.env.APP_BASE_URL ||
+      "http://localhost:3000"
     ).replace(/\/+$/, "");
 
     const orderingUrl =

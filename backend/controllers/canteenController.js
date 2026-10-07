@@ -1,4 +1,8 @@
 const Canteen = require("../models/Canteen");
+const {
+  createMasterQrFields,
+  ensureCanteenMasterQr,
+} = require("../services/canteenMasterQrService");
 
 /*
  * POST /api/canteens
@@ -30,6 +34,7 @@ const createCanteen = async (req, res, next) => {
       });
     }
 
+    const masterQr = await createMasterQrFields();
     const canteen = await Canteen.create({
       ownerId: req.user.id,
       name: name.trim(),
@@ -38,6 +43,7 @@ const createCanteen = async (req, res, next) => {
       contactNumber: contactNumber.trim(),
       openingTime: openingTime.trim(),
       closingTime: closingTime.trim(),
+      ...masterQr,
     });
 
     return res.status(201).json({
@@ -63,6 +69,8 @@ const getMyCanteens = async (req, res, next) => {
     }).sort({
       createdAt: 1,
     });
+
+    await Promise.all(canteens.map(ensureCanteenMasterQr));
 
     return res.status(200).json({
       success: true,
@@ -93,6 +101,8 @@ const getMyCanteenById = async (req, res, next) => {
         message: "Canteen not found",
       });
     }
+
+    await ensureCanteenMasterQr(canteen);
 
     return res.status(200).json({
       success: true,
@@ -223,10 +233,36 @@ const updateCanteenStatus = async (req, res, next) => {
   }
 };
 
+const updateMasterQrStatus = async (req, res, next) => {
+  try {
+    const canteen = await Canteen.findOne({
+      _id: req.params.canteenId,
+      ownerId: req.user.id,
+    });
+
+    if (!canteen) {
+      return res.status(404).json({ success: false, message: "Canteen not found" });
+    }
+
+    await ensureCanteenMasterQr(canteen);
+    canteen.masterQrEnabled = req.body.enabled;
+    await canteen.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Master QR ordering ${canteen.masterQrEnabled ? "enabled" : "paused"}`,
+      data: { canteen },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createCanteen,
   getMyCanteens,
   getMyCanteenById,
   updateMyCanteen,
   updateCanteenStatus,
+  updateMasterQrStatus,
 };

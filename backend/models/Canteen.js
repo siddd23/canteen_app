@@ -56,6 +56,20 @@ const canteenSchema = new mongoose.Schema(
       default: "Active",
       index: true,
     },
+
+    publicCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      uppercase: true,
+      trim: true,
+      immutable: true,
+      index: true,
+    },
+
+    masterOrderingUrl: { type: String, trim: true, default: "" },
+    masterQrCode: { type: String, default: "" },
+    masterQrEnabled: { type: Boolean, default: true, index: true },
   },
   {
     timestamps: true,

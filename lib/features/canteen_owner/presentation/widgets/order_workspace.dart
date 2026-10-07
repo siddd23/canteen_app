@@ -580,7 +580,9 @@ class _OrderCard extends StatelessWidget {
             const SizedBox(width: 9),
             Expanded(
               child: Text(
-                '${order.companyName} · ${order.building}${order.floor.isEmpty ? '' : ', ${order.floor}'}',
+                order.isMasterQrOrder
+                    ? 'Master QR · ${order.deliveryAddressLine}'
+                    : '${order.companyName} · ${order.building}${order.floor.isEmpty ? '' : ', ${order.floor}'}',
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 13,

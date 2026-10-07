@@ -11,6 +11,7 @@ const {
   getMyCanteenById,
   updateMyCanteen,
   updateCanteenStatus,
+  updateMasterQrStatus,
 } = require("../controllers/canteenController");
 
 const router = express.Router();
@@ -141,6 +142,16 @@ router.patch(
   ],
   validateRequest,
   updateCanteenStatus
+);
+
+router.patch(
+  "/:canteenId/master-qr/status",
+  [
+    param("canteenId").isMongoId().withMessage("Invalid canteen ID"),
+    body("enabled").isBoolean().withMessage("enabled must be true or false"),
+  ],
+  validateRequest,
+  updateMasterQrStatus,
 );
 
 module.exports = router;

@@ -44,6 +44,13 @@ class CanteenOrder {
     required this.orderStatus,
     required this.paymentStatus,
     required this.createdAt,
+    required this.orderSource,
+    required this.deliveryBuildingName,
+    required this.deliveryFloorOrRoom,
+    required this.deliveryStreetArea,
+    required this.deliveryLandmark,
+    required this.deliveryCity,
+    required this.deliveryPincode,
   });
 
   final String id;
@@ -66,6 +73,23 @@ class CanteenOrder {
   final String orderStatus;
   final String paymentStatus;
   final DateTime? createdAt;
+  final String orderSource;
+  final String deliveryBuildingName;
+  final String deliveryFloorOrRoom;
+  final String deliveryStreetArea;
+  final String deliveryLandmark;
+  final String deliveryCity;
+  final String deliveryPincode;
+
+  bool get isMasterQrOrder => orderSource == 'canteen_master_qr';
+  String get deliveryAddressLine => [
+        deliveryBuildingName,
+        deliveryFloorOrRoom,
+        deliveryStreetArea,
+        deliveryLandmark,
+        deliveryCity,
+        deliveryPincode,
+      ].where((value) => value.trim().isNotEmpty).join(', ');
 
   bool get isPending => orderStatus == 'Pending';
   bool get isAccepted => orderStatus == 'Accepted';
@@ -79,6 +103,9 @@ class CanteenOrder {
     );
     final canteen = Map<String, dynamic>.from(
       json['canteenSnapshot'] as Map? ?? const {},
+    );
+    final delivery = Map<String, dynamic>.from(
+      json['deliveryAddress'] as Map? ?? const {},
     );
     final rawItems = json['items'] as List? ?? const [];
     return CanteenOrder(
@@ -105,6 +132,13 @@ class CanteenOrder {
       orderStatus: json['orderStatus']?.toString() ?? 'Pending',
       paymentStatus: json['paymentStatus']?.toString() ?? 'Unpaid',
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
+      orderSource: json['orderSource']?.toString() ?? 'office_qr',
+      deliveryBuildingName: delivery['buildingName']?.toString() ?? '',
+      deliveryFloorOrRoom: delivery['floorOrRoom']?.toString() ?? '',
+      deliveryStreetArea: delivery['streetArea']?.toString() ?? '',
+      deliveryLandmark: delivery['landmark']?.toString() ?? '',
+      deliveryCity: delivery['city']?.toString() ?? '',
+      deliveryPincode: delivery['pincode']?.toString() ?? '',
     );
   }
 }
