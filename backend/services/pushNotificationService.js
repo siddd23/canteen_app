@@ -74,28 +74,31 @@ const sendNewOrderPush = async (order) => {
 
   const response = await getMessaging().sendEachForMulticast({
     tokens,
-    notification: {
-      title: "New canteen order",
-      body: `${order.orderNumber} from ${order.customerName} • ₹${order.grandTotal}`,
-    },
     data: {
       type: "new_order",
       orderId: String(order._id),
       orderNumber: String(order.orderNumber),
       canteenId: String(order.canteenId),
+      fulfillmentType: String(order.fulfillmentType || "asap"),
+      scheduledFor: order.scheduledFor ? order.scheduledFor.toISOString() : "",
+      scheduledSlot: String(order.scheduledSlot || ""),
     },
     android: {
       priority: "high",
-      notification: {
-        channelId: "new_orders_v2",
-        sound: "order_bell",
-        priority: "high",
-        visibility: "public",
-      },
+      ttl: 60 * 60 * 1000,
     },
     apns: {
+      headers: { "apns-priority": "10" },
       payload: {
-        aps: { sound: "default", badge: 1 },
+        aps: {
+          alert: {
+            title: "New BookFood order",
+            body: `${order.orderNumber} from ${order.customerName}`,
+          },
+          sound: "default",
+          badge: 1,
+          contentAvailable: true,
+        },
       },
     },
   });

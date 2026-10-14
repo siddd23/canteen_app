@@ -51,6 +51,17 @@ class MenuService {
     return _categoryFromResponse(response);
   }
 
+  Future<void> deleteCategory({
+    required String canteenId,
+    required String categoryId,
+    required bool deleteItems,
+  }) async {
+    await ApiService.instance.delete(
+      '${_menuPath(canteenId)}/categories/$categoryId',
+      body: {'deleteItems': deleteItems},
+    );
+  }
+
   Future<CanteenMenuItem> createItem({
     required String canteenId,
     required String categoryId,
@@ -61,6 +72,7 @@ class MenuService {
     required int preparationTime,
     required String imageUrl,
     required bool isAvailable,
+    required List<String> availableDays,
   }) async {
     final response = await ApiService.instance.post(
       '${_menuPath(canteenId)}/items',
@@ -73,6 +85,7 @@ class MenuService {
         'preparationTime': preparationTime,
         'imageUrl': imageUrl.trim(),
         'isAvailable': isAvailable,
+        'availableDays': availableDays,
       },
     );
     return _itemFromResponse(response);
@@ -89,6 +102,7 @@ class MenuService {
     required int preparationTime,
     required String imageUrl,
     required bool isAvailable,
+    required List<String> availableDays,
   }) async {
     final response = await ApiService.instance.patch(
       '${_menuPath(canteenId)}/items/$itemId',
@@ -101,9 +115,19 @@ class MenuService {
         'preparationTime': preparationTime,
         'imageUrl': imageUrl.trim(),
         'isAvailable': isAvailable,
+        'availableDays': availableDays,
       },
     );
     return _itemFromResponse(response);
+  }
+
+  Future<void> deleteItem({
+    required String canteenId,
+    required String itemId,
+  }) async {
+    await ApiService.instance.delete(
+      '${_menuPath(canteenId)}/items/$itemId',
+    );
   }
 
   Future<CanteenMenuItem> updateAvailability({

@@ -25,6 +25,7 @@ const publicOrderingRoutes = require("./routes/publicOrderingRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const accountRoutes = require("./routes/accountRoutes");
 const sessionRoutes = require("./routes/sessionRoutes");
+const customerRoutes = require("./routes/customerRoutes");
 const app = express();
 
 app.disable("x-powered-by");
@@ -94,6 +95,7 @@ app.get("/api/health", (req, res) => {
 app.use(generalRateLimit);
 app.use("/api/auth", authRateLimit, authRoutes);
 app.use("/api/session", sessionRoutes);
+app.use("/api/customers", authRateLimit, customerRoutes);
 app.use("/api/admin/owners", ownerRoutes);
 app.use("/api/canteens", canteenRoutes);
 app.use("/api/canteens", menuRoutes);

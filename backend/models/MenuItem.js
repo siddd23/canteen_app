@@ -71,6 +71,16 @@ const menuItemSchema = new mongoose.Schema(
       default: true,
       index: true,
     },
+
+    availableDays: {
+      type: [String],
+      enum: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      default: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+      validate: {
+        validator: (days) => Array.isArray(days) && days.length > 0,
+        message: "Select at least one available day",
+      },
+    },
   },
   {
     timestamps: true,

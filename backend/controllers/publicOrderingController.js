@@ -7,6 +7,18 @@ const crypto = require("crypto");
 const { emitNewOrder } = require("../services/realtimeService");
 const { sendNewOrderPush } = require("../services/pushNotificationService");
 
+const indiaWeekday = (value = new Date()) => new Intl.DateTimeFormat("en-US", {
+  timeZone: "Asia/Kolkata",
+  weekday: "long",
+}).format(value);
+const dayAvailabilityFilter = (value) => ({
+  $or: [
+    { availableDays: indiaWeekday(value) },
+    { availableDays: { $exists: false } },
+    { availableDays: { $size: 0 } },
+  ],
+});
+
 const normalizeOfficeCode = (value) => value.trim().toUpperCase();
 const normalizeCanteenCode = (value) => value.trim().toUpperCase();
 
@@ -29,7 +41,7 @@ const resolveOfficeQr = async (req, res, next) => {
         path: "canteenIds",
         match: { status: "Active" },
         select:
-          "name address city contactNumber openingTime closingTime status",
+          "name address city contactNumber openingTime closingTime serviceSlots status",
       })
       .lean();
 
@@ -90,7 +102,7 @@ const getPublicCanteenMenu = async (req, res, next) => {
       status: "Active",
     })
       .select(
-        "name address city contactNumber openingTime closingTime status",
+        "name address city contactNumber openingTime closingTime serviceSlots status",
       )
       .lean();
 
@@ -115,9 +127,10 @@ const getPublicCanteenMenu = async (req, res, next) => {
       canteenId: canteen._id,
       categoryId: { $in: categoryIds },
       isAvailable: true,
+      ...dayAvailabilityFilter(),
     })
       .select(
-        "categoryId name description price foodType preparationTime imageUrl isAvailable",
+        "categoryId name description price foodType preparationTime imageUrl isAvailable availableDays",
       )
       .sort({ categoryId: 1, name: 1 })
       .lean();
@@ -150,6 +163,36 @@ const createTrackingToken = () => crypto.randomBytes(32).toString("hex");
 const hashTrackingToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
+const resolveSchedule = (body, canteen) => {
+  if (body.fulfillmentType !== "scheduled") {
+    return { fulfillmentType: "asap", scheduledFor: null, scheduledSlot: "" };
+  }
+  const scheduledFor = new Date(body.scheduledFor);
+  const now = Date.now();
+  if (!Number.isFinite(scheduledFor.getTime()) || scheduledFor.getTime() < now + 15 * 60 * 1000) {
+    const error = new Error("Scheduled time must be at least 15 minutes from now");
+    error.statusCode = 400;
+    throw error;
+  }
+  if (scheduledFor.getTime() > now + 7 * 24 * 60 * 60 * 1000) {
+    const error = new Error("Orders can only be scheduled up to 7 days ahead");
+    error.statusCode = 400;
+    throw error;
+  }
+  const slots = canteen.serviceSlots?.length ? canteen.serviceSlots : [{
+    label: "Service", openingTime: canteen.openingTime, closingTime: canteen.closingTime,
+  }];
+  const slot = slots.find(
+    (item) => item.label.toLowerCase() === String(body.scheduledSlot || "").trim().toLowerCase(),
+  );
+  if (!slot) {
+    const error = new Error("Select a valid canteen service slot");
+    error.statusCode = 400;
+    throw error;
+  }
+  return { fulfillmentType: "scheduled", scheduledFor, scheduledSlot: slot.label };
+};
+
 /*
  * POST /api/public/orders
  * Creates an employee order without authentication. Prices and availability
@@ -160,6 +203,8 @@ const createPublicOrder = async (req, res, next) => {
     const officeCode = normalizeOfficeCode(req.body.officeCode);
     const { canteenId, customerName, mobile, customerNote = "", items } =
       req.body;
+    const orderCustomerName = req.customer?.name || customerName;
+    const orderMobile = req.customer?.mobile || mobile;
 
     const office = await Office.findOne({
       officeCode,
@@ -183,7 +228,7 @@ const createPublicOrder = async (req, res, next) => {
       ownerId: office.ownerId,
       status: "Active",
     })
-      .select("name")
+      .select("name openingTime closingTime serviceSlots")
       .lean();
 
     if (!canteen) {
@@ -208,6 +253,7 @@ const createPublicOrder = async (req, res, next) => {
       ownerId: office.ownerId,
       canteenId,
       isAvailable: true,
+      ...dayAvailabilityFilter(req.body.fulfillmentType === "scheduled" ? new Date(req.body.scheduledFor) : undefined),
     })
       .select("name price preparationTime categoryId")
       .populate({ path: "categoryId", match: { status: "Active" }, select: "_id" })
@@ -252,11 +298,13 @@ const createPublicOrder = async (req, res, next) => {
     );
 
     const trackingToken = createTrackingToken();
+    const schedule = resolveSchedule(req.body, canteen);
     const order = await Order.create({
       orderNumber: createOrderNumber(),
       trackingTokenHash: hashTrackingToken(trackingToken),
       trackingTokenIssuedAt: new Date(),
       ownerId: office.ownerId,
+      customerId: req.customer?._id || null,
       officeId: office._id,
       canteenId: canteen._id,
       officeSnapshot: {
@@ -268,14 +316,15 @@ const createPublicOrder = async (req, res, next) => {
         city: office.city,
       },
       canteenSnapshot: { name: canteen.name },
-      customerName: customerName.trim(),
-      mobile: mobile.trim(),
+      customerName: orderCustomerName.trim(),
+      mobile: orderMobile.trim(),
       customerNote: customerNote.trim(),
       items: orderItems,
       itemCount,
       subtotal,
       grandTotal: subtotal,
       estimatedPreparationTime,
+      ...schedule,
     });
 
     emitNewOrder(order);
@@ -298,6 +347,9 @@ const createPublicOrder = async (req, res, next) => {
           paymentStatus: order.paymentStatus,
           canteenName: order.canteenSnapshot.name,
           createdAt: order.createdAt,
+          fulfillmentType: order.fulfillmentType,
+          scheduledFor: order.scheduledFor,
+          scheduledSlot: order.scheduledSlot,
           trackingToken,
           trackingPath: `/track/${order.orderNumber}?token=${trackingToken}`,
         },
@@ -316,7 +368,7 @@ const resolveCanteenMasterQr = async (req, res, next) => {
       status: "Active",
       masterQrEnabled: true,
     })
-      .select("name address city contactNumber openingTime closingTime publicCode")
+      .select("name address city contactNumber openingTime closingTime serviceSlots publicCode")
       .lean();
 
     if (!canteen) {
@@ -340,7 +392,7 @@ const getMasterCanteenMenu = async (req, res, next) => {
       status: "Active",
       masterQrEnabled: true,
     })
-      .select("name address city contactNumber openingTime closingTime publicCode")
+      .select("name address city contactNumber openingTime closingTime serviceSlots publicCode")
       .lean();
 
     if (!canteen) {
@@ -359,8 +411,9 @@ const getMasterCanteenMenu = async (req, res, next) => {
       canteenId: canteen._id,
       categoryId: { $in: categoryIds },
       isAvailable: true,
+      ...dayAvailabilityFilter(),
     })
-      .select("categoryId name description price foodType preparationTime imageUrl isAvailable")
+      .select("categoryId name description price foodType preparationTime imageUrl isAvailable availableDays")
       .sort({ categoryId: 1, name: 1 })
       .lean();
 
@@ -380,7 +433,7 @@ const createMasterQrOrder = async (req, res, next) => {
       publicCode: normalizeCanteenCode(req.params.publicCode),
       status: "Active",
       masterQrEnabled: true,
-    }).select("ownerId name publicCode").lean();
+    }).select("ownerId name publicCode openingTime closingTime serviceSlots").lean();
 
     if (!canteen) {
       return res.status(404).json({
@@ -390,6 +443,8 @@ const createMasterQrOrder = async (req, res, next) => {
     }
 
     const { customerName, mobile, customerNote = "", items, deliveryAddress } = req.body;
+    const orderCustomerName = req.customer?.name || customerName;
+    const orderMobile = req.customer?.mobile || mobile;
     const itemIds = items.map((item) => item.menuItemId);
     const uniqueItemIds = [...new Set(itemIds.map(String))];
     if (uniqueItemIds.length !== itemIds.length) {
@@ -401,6 +456,7 @@ const createMasterQrOrder = async (req, res, next) => {
       ownerId: canteen.ownerId,
       canteenId: canteen._id,
       isAvailable: true,
+      ...dayAvailabilityFilter(req.body.fulfillmentType === "scheduled" ? new Date(req.body.scheduledFor) : undefined),
     })
       .select("name price preparationTime categoryId")
       .populate({ path: "categoryId", match: { status: "Active" }, select: "_id" })
@@ -433,6 +489,7 @@ const createMasterQrOrder = async (req, res, next) => {
       0,
     );
     const trackingToken = createTrackingToken();
+    const schedule = resolveSchedule(req.body, canteen);
     const cleanAddress = {
       buildingName: deliveryAddress.buildingName.trim(),
       floorOrRoom: deliveryAddress.floorOrRoom.trim(),
@@ -446,18 +503,20 @@ const createMasterQrOrder = async (req, res, next) => {
       trackingTokenHash: hashTrackingToken(trackingToken),
       trackingTokenIssuedAt: new Date(),
       ownerId: canteen.ownerId,
+      customerId: req.customer?._id || null,
       orderSource: "canteen_master_qr",
       canteenId: canteen._id,
       canteenSnapshot: { name: canteen.name },
       deliveryAddress: cleanAddress,
-      customerName: customerName.trim(),
-      mobile: mobile.trim(),
+      customerName: orderCustomerName.trim(),
+      mobile: orderMobile.trim(),
       customerNote: customerNote.trim(),
       items: orderItems,
       itemCount,
       subtotal,
       grandTotal: subtotal,
       estimatedPreparationTime,
+      ...schedule,
     });
 
     emitNewOrder(order);
@@ -480,6 +539,9 @@ const createMasterQrOrder = async (req, res, next) => {
           paymentStatus: order.paymentStatus,
           canteenName: order.canteenSnapshot.name,
           createdAt: order.createdAt,
+          fulfillmentType: order.fulfillmentType,
+          scheduledFor: order.scheduledFor,
+          scheduledSlot: order.scheduledSlot,
           trackingToken,
           trackingPath: `/track/${order.orderNumber}?token=${trackingToken}`,
         },
@@ -501,7 +563,7 @@ const trackPublicOrder = async (req, res, next) => {
       trackingTokenHash: hashTrackingToken(req.query.token),
     })
       .select(
-        "orderNumber orderSource officeSnapshot deliveryAddress canteenSnapshot customerName items itemCount grandTotal estimatedPreparationTime orderStatus paymentStatus acceptedAt deliveredAt rejectedAt cancelledAt createdAt updatedAt",
+        "orderNumber orderSource officeSnapshot deliveryAddress canteenSnapshot customerName items itemCount grandTotal estimatedPreparationTime orderStatus paymentStatus fulfillmentType scheduledFor scheduledSlot acceptedAt deliveredAt rejectedAt cancelledAt createdAt updatedAt",
       )
       .lean();
 

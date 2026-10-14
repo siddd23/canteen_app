@@ -50,6 +50,22 @@ const canteenSchema = new mongoose.Schema(
       trim: true,
     },
 
+    serviceSlots: {
+      type: [
+        {
+          _id: false,
+          label: { type: String, required: true, trim: true, maxlength: 40 },
+          openingTime: { type: String, required: true, trim: true },
+          closingTime: { type: String, required: true, trim: true },
+        },
+      ],
+      default: [],
+      validate: {
+        validator: (slots) => !slots.length || slots.length === 2,
+        message: "Exactly two service slots are required",
+      },
+    },
+
     status: {
       type: String,
       enum: ["Active", "Inactive"],

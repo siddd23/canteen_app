@@ -10,6 +10,7 @@ class CanteenMenuItem {
     required this.preparationTime,
     required this.imageUrl,
     required this.isAvailable,
+    required this.availableDays,
   });
 
   final String id;
@@ -22,6 +23,7 @@ class CanteenMenuItem {
   final int preparationTime;
   final String imageUrl;
   final bool isAvailable;
+  final List<String> availableDays;
 
   bool get isVegetarian => foodType == 'Vegetarian';
 
@@ -37,6 +39,8 @@ class CanteenMenuItem {
       preparationTime: (json['preparationTime'] as num?)?.toInt() ?? 0,
       imageUrl: json['imageUrl']?.toString() ?? '',
       isAvailable: json['isAvailable'] as bool? ?? true,
+      availableDays: (json['availableDays'] as List? ?? const <String>[])
+          .map((day) => day.toString()).toList(),
     );
   }
 }

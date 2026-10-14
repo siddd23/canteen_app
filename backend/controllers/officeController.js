@@ -7,7 +7,7 @@ const Office = require("../models/Office");
 const officePopulation = {
   path: "canteenIds",
   select:
-    "name address city contactNumber openingTime closingTime status",
+    "name address city contactNumber openingTime closingTime serviceSlots status",
 };
 
 const trimText = (value) =>

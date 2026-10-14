@@ -56,6 +56,9 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
   String? _error;
   bool _loading = true;
   bool _exporting = false;
+  bool _deleting = false;
+  bool _selectionMode = false;
+  final Set<String> _selectedOrderIds = {};
   int _page = 1;
 
   @override
@@ -105,6 +108,8 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
       setState(() {
         _result = result;
         _page = result.page;
+        _selectedOrderIds.clear();
+        _selectionMode = false;
       });
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -463,6 +468,77 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
     _load(page: 1);
   }
 
+  Future<void> _shareOrderPdf(CanteenOrder order) => _shareOrdersPdf(
+        title: 'ORDER RECEIPT',
+        customer: order,
+        orders: [order],
+        fileLabel: order.orderNumber,
+      );
+
+  Future<void> _shareCustomerPdf(CanteenOrder order) async {
+    setState(() => _exporting = true);
+    try {
+      final orders = await OrderService.instance.getCustomerStatement(
+        customerName: order.customerName,
+        mobile: order.mobile,
+        canteenId: _canteenId == _all ? null : _canteenId,
+        dateFrom: _dateRange?.start,
+        dateTo: _dateRange?.end,
+      );
+      await _shareOrdersPdf(
+        title: 'CUSTOMER STATEMENT',
+        customer: order,
+        orders: orders,
+        fileLabel: '${order.customerName}_${order.mobile}',
+        manageLoading: false,
+      );
+    } catch (error) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error is ApiException ? error.message : 'Unable to create customer statement.')));
+    } finally { if (mounted) setState(() => _exporting = false); }
+  }
+
+  Future<void> _shareOrdersPdf({required String title, required CanteenOrder customer, required List<CanteenOrder> orders, required String fileLabel, bool manageLoading = true}) async {
+    if (manageLoading) setState(() => _exporting = true);
+    try {
+      pw.MemoryImage? logo;
+      try { final data = await rootBundle.load('assets/images/bookfood_logo_dark.png'); logo = pw.MemoryImage(data.buffer.asUint8List()); } catch (_) {}
+      final total = orders.fold<double>(0, (sum, item) => sum + item.grandTotal);
+      final paid = orders.where((item) => item.paymentStatus == 'Paid').fold<double>(0, (sum, item) => sum + item.grandTotal);
+      final outstanding = orders.where((item) => item.paymentStatus == 'PayLater').fold<double>(0, (sum, item) => sum + item.grandTotal);
+      final pdf = pw.Document(title: 'BookFood $title', author: 'BookFood');
+      pdf.addPage(pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(36),
+        header: (_) => pw.Column(children: [
+          pw.Row(children: [if (logo != null) pw.SizedBox(width: 135, height: 42, child: pw.Image(logo, fit: pw.BoxFit.contain)) else pw.Text('BookFood.', style: pw.TextStyle(fontSize: 25, fontWeight: pw.FontWeight.bold)), pw.Spacer(), pw.Text(title, style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold))]),
+          pw.Divider(color: PdfColors.grey700),
+        ]),
+        footer: (context) => pw.Row(mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [pw.Text('Professional food ordering, made simple.', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)), pw.Text('Page ${context.pageNumber} of ${context.pagesCount}', style: const pw.TextStyle(fontSize: 8))]),
+        build: (_) => [
+          pw.SizedBox(height: 12),
+          pw.Text(customer.customerName, style: pw.TextStyle(fontSize: 19, fontWeight: pw.FontWeight.bold)),
+          pw.Text('${customer.mobile}  •  ${customer.canteenName}', style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700)),
+          pw.SizedBox(height: 18),
+          pw.Row(children: [_pdfSummaryCard('ORDERS', '${orders.length}'), pw.SizedBox(width: 8), _pdfSummaryCard('TOTAL', 'INR ${total.toStringAsFixed(2)}'), pw.SizedBox(width: 8), _pdfSummaryCard('PAID', 'INR ${paid.toStringAsFixed(2)}'), pw.SizedBox(width: 8), _pdfSummaryCard('OUTSTANDING', 'INR ${outstanding.toStringAsFixed(2)}')]),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headers: const ['Date', 'Order', 'Items', 'Status', 'Payment', 'Amount'],
+            data: orders.map((item) => [_statementDate(item.createdAt), item.orderNumber, item.items.map((line) => '${line.quantity} x ${line.name}').join(', '), item.orderStatus, item.paymentStatus, 'INR ${item.grandTotal.toStringAsFixed(2)}']).toList(),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.black),
+            headerStyle: pw.TextStyle(color: PdfColors.white, fontSize: 8, fontWeight: pw.FontWeight.bold),
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            cellPadding: const pw.EdgeInsets.all(6),
+            border: pw.TableBorder.all(color: PdfColors.grey300),
+          ),
+          pw.SizedBox(height: 18),
+          pw.Align(alignment: pw.Alignment.centerRight, child: pw.Text('Grand total: INR ${total.toStringAsFixed(2)}', style: pw.TextStyle(fontSize: 13, fontWeight: pw.FontWeight.bold))),
+        ],
+      ));
+      final safe = fileLabel.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+      await Printing.sharePdf(bytes: await pdf.save(), filename: 'BookFood_$safe.pdf');
+    } finally { if (manageLoading && mounted) setState(() => _exporting = false); }
+  }
+
   void _reset() {
     _searchController.clear();
     setState(() {
@@ -474,6 +550,139 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
       _page = 1;
     });
     _load(page: 1);
+  }
+
+  bool _canDelete(CanteenOrder order) {
+    final terminal = const {'Delivered', 'Rejected', 'Cancelled'}
+        .contains(order.orderStatus);
+    final billingClear = order.paymentStatus == 'Paid' ||
+        const {'Rejected', 'Cancelled'}.contains(order.orderStatus);
+    return terminal && billingClear;
+  }
+
+  void _toggleSelection(String orderId, bool selected) {
+    setState(() {
+      if (selected) {
+        _selectedOrderIds.add(orderId);
+      } else {
+        _selectedOrderIds.remove(orderId);
+      }
+    });
+  }
+
+  void _selectAllVisible() {
+    final deletableIds = (_result?.orders ?? const <CanteenOrder>[])
+        .where(_canDelete)
+        .map((order) => order.id)
+        .toSet();
+    setState(() {
+      if (deletableIds.isNotEmpty &&
+          deletableIds.every(_selectedOrderIds.contains)) {
+        _selectedOrderIds.removeAll(deletableIds);
+      } else {
+        _selectedOrderIds.addAll(deletableIds);
+      }
+    });
+  }
+
+  Future<bool> _confirmDelete({
+    required String title,
+    required String message,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.delete_outline_rounded),
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete permanently'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _deleteSelected() async {
+    if (_selectedOrderIds.isEmpty) return;
+    final confirmed = await _confirmDelete(
+      title: 'Delete selected history?',
+      message:
+          '${_selectedOrderIds.length} finalized record${_selectedOrderIds.length == 1 ? '' : 's'} will be permanently deleted. Outstanding and active orders are protected.',
+    );
+    if (!confirmed || !mounted) return;
+    await _runDelete(
+      () => OrderService.instance.deleteSelectedHistory(
+        _selectedOrderIds.toList(),
+      ),
+    );
+  }
+
+  Future<void> _deletePaidInFilters() async {
+    final period = _dateRange == null
+        ? 'all dates'
+        : '${_shortDate(_dateRange!.start)} – ${_shortDate(_dateRange!.end)}';
+    final confirmed = await _confirmDelete(
+      title: 'Delete paid history?',
+      message:
+          'All fully paid, finalized records matching the current canteen, office and $period filters will be permanently deleted. Unpaid and Pay Later bills will not be touched.',
+    );
+    if (!confirmed || !mounted) return;
+    await _runDelete(
+      () => OrderService.instance.deletePaidHistory(
+        officeId: _officeId == _all ? null : _officeId,
+        canteenId: _canteenId == _all ? null : _canteenId,
+        dateFrom: _dateRange?.start,
+        dateTo: _dateRange?.end,
+      ),
+    );
+  }
+
+  Future<void> _runDelete(Future<int> Function() operation) async {
+    setState(() => _deleting = true);
+    try {
+      final count = await operation();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            count == 0
+                ? 'No eligible history records were found.'
+                : '$count history record${count == 1 ? '' : 's'} deleted.',
+          ),
+        ),
+      );
+      await _load(page: 1);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await widget.onSessionExpired();
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to delete history. Please try again.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _deleting = false);
+    }
   }
 
   @override
@@ -550,6 +759,25 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
               message: 'No orders match the selected filters.',
             )
           else ...[
+            _HistoryManagementBar(
+              selectionMode: _selectionMode,
+              selectedCount: _selectedOrderIds.length,
+              deleting: _deleting,
+              allVisibleSelected: _result!.orders.any(_canDelete) &&
+                  _result!.orders
+                      .where(_canDelete)
+                      .map((order) => order.id)
+                      .every(_selectedOrderIds.contains),
+              hasDeletableRecords: _result!.orders.any(_canDelete),
+              onToggleSelection: () => setState(() {
+                _selectionMode = !_selectionMode;
+                if (!_selectionMode) _selectedOrderIds.clear();
+              }),
+              onSelectAll: _selectAllVisible,
+              onDeleteSelected: _deleteSelected,
+              onDeletePaid: _deletePaidInFilters,
+            ),
+            const SizedBox(height: 14),
             Row(
               children: [
                 Expanded(
@@ -569,7 +797,15 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
             ..._result!.orders.map(
               (order) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: _HistoryOrderCard(order: order),
+                child: _HistoryOrderCard(
+                  order: order,
+                  selectionMode: _selectionMode,
+                  selected: _selectedOrderIds.contains(order.id),
+                  deletable: _canDelete(order),
+                  onSelected: (value) => _toggleSelection(order.id, value),
+                  onOrderPdf: _exporting ? null : () => _shareOrderPdf(order),
+                  onCustomerPdf: _exporting ? null : () => _shareCustomerPdf(order),
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -598,6 +834,94 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
       ),
     );
   }
+}
+
+class _HistoryManagementBar extends StatelessWidget {
+  const _HistoryManagementBar({
+    required this.selectionMode,
+    required this.selectedCount,
+    required this.deleting,
+    required this.allVisibleSelected,
+    required this.hasDeletableRecords,
+    required this.onToggleSelection,
+    required this.onSelectAll,
+    required this.onDeleteSelected,
+    required this.onDeletePaid,
+  });
+
+  final bool selectionMode;
+  final int selectedCount;
+  final bool deleting;
+  final bool allVisibleSelected;
+  final bool hasDeletableRecords;
+  final VoidCallback onToggleSelection;
+  final VoidCallback onSelectAll;
+  final VoidCallback onDeleteSelected;
+  final VoidCallback onDeletePaid;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: AppColors.border),
+    ),
+    child: Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        OutlinedButton.icon(
+          onPressed: deleting ? null : onToggleSelection,
+          icon: Icon(
+            selectionMode ? Icons.close_rounded : Icons.checklist_rounded,
+          ),
+          label: Text(selectionMode ? 'Cancel selection' : 'Select records'),
+        ),
+        if (selectionMode) ...[
+          OutlinedButton.icon(
+            onPressed: deleting || !hasDeletableRecords ? null : onSelectAll,
+            icon: Icon(
+              allVisibleSelected
+                  ? Icons.deselect_rounded
+                  : Icons.select_all_rounded,
+            ),
+            label: Text(
+              allVisibleSelected ? 'Clear page' : 'Select all on page',
+            ),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            onPressed: deleting || selectedCount == 0
+                ? null
+                : onDeleteSelected,
+            icon: deleting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.delete_outline_rounded),
+            label: Text('Delete selected ($selectedCount)'),
+          ),
+        ],
+        if (!selectionMode)
+          TextButton.icon(
+            onPressed: deleting ? null : onDeletePaid,
+            icon: const Icon(Icons.cleaning_services_outlined),
+            label: const Text('Delete paid by current filters'),
+          ),
+        const Text(
+          'Only finalized paid, rejected or cancelled records can be deleted.',
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _HistoryFilters extends StatelessWidget {
@@ -817,11 +1141,33 @@ class _HistoryFilters extends StatelessWidget {
 }
 
 class _HistoryOrderCard extends StatelessWidget {
-  const _HistoryOrderCard({required this.order});
+  const _HistoryOrderCard({
+    required this.order,
+    required this.selectionMode,
+    required this.selected,
+    required this.deletable,
+    required this.onSelected,
+    required this.onOrderPdf,
+    required this.onCustomerPdf,
+  });
   final CanteenOrder order;
+  final bool selectionMode;
+  final bool selected;
+  final bool deletable;
+  final ValueChanged<bool> onSelected;
+  final VoidCallback? onOrderPdf;
+  final VoidCallback? onCustomerPdf;
 
   @override
   Widget build(BuildContext context) => ExpansionTile(
+    leading: selectionMode
+        ? Checkbox(
+            value: selected,
+            onChanged: deletable
+                ? (value) => onSelected(value ?? false)
+                : null,
+          )
+        : null,
     tilePadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
     childrenPadding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
     backgroundColor: AppColors.surface,
@@ -857,13 +1203,15 @@ class _HistoryOrderCard extends StatelessWidget {
         '${order.isMasterQrOrder ? '\n' : ''}${_dateTime(order.createdAt)}',
       ),
     ),
-    trailing: Wrap(
-      spacing: 6,
-      children: [
-        _StatusChip(order.orderStatus),
-        _StatusChip(order.paymentStatus),
-      ],
-    ),
+    trailing: selectionMode
+        ? null
+        : Wrap(
+            spacing: 6,
+            children: [
+              _StatusChip(order.orderStatus),
+              _StatusChip(order.paymentStatus),
+            ],
+          ),
     children: [
       const Divider(),
       ...order.items.map(
@@ -890,6 +1238,12 @@ class _HistoryOrderCard extends StatelessWidget {
           ),
         ),
       ],
+      const SizedBox(height: 14),
+      Row(children: [
+        Expanded(child: OutlinedButton.icon(onPressed: onOrderPdf, icon: const Icon(Icons.picture_as_pdf_outlined), label: const Text('Order PDF'))),
+        const SizedBox(width: 10),
+        Expanded(child: FilledButton.tonalIcon(onPressed: onCustomerPdf, icon: const Icon(Icons.account_box_outlined), label: const Text('Customer statement'))),
+      ]),
     ],
   );
 }

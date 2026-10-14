@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/services/order_sound_service.dart';
+import '../../../../core/services/push_notification_service.dart';
 import '../../../../core/utils/api_exception.dart';
 import '../../../../shared/models/canteen.dart';
 import '../../../../shared/models/order.dart';
@@ -146,6 +147,7 @@ class _OrderWorkspaceState extends State<OrderWorkspace>
               unawaited(
                 OrderSoundService.instance.stopPendingOrderAlert(matching.id),
               );
+              unawaited(PushNotificationService.instance.stopOrderAlarm(matching.id));
             }
           }
         }
@@ -218,6 +220,7 @@ class _OrderWorkspaceState extends State<OrderWorkspace>
         unawaited(
           OrderSoundService.instance.stopPendingOrderAlert(updated.id),
         );
+        unawaited(PushNotificationService.instance.stopOrderAlarm(updated.id));
       }
       _message(
         payment

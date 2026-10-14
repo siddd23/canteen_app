@@ -160,6 +160,66 @@ const updateMenuCategory = async (req, res, next) => {
 };
 
 /*
+ * DELETE /api/canteens/:canteenId/menu/categories/:categoryId
+ */
+const deleteMenuCategory = async (req, res, next) => {
+  try {
+    const canteen = await findOwnedCanteen(
+      req.params.canteenId,
+      req.user.id,
+    );
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "Canteen not found",
+      });
+    }
+
+    const category = await MenuCategory.findOne({
+      _id: req.params.categoryId,
+      canteenId: canteen._id,
+      ownerId: req.user.id,
+    });
+
+    if (!category) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu category not found",
+      });
+    }
+
+    const itemFilter = {
+      categoryId: category._id,
+      canteenId: canteen._id,
+      ownerId: req.user.id,
+    };
+    const itemCount = await MenuItem.countDocuments(itemFilter);
+
+    if (itemCount > 0 && req.body.deleteItems !== true) {
+      return res.status(409).json({
+        success: false,
+        message: `This category contains ${itemCount} menu item${itemCount === 1 ? "" : "s"}. Confirm deleting them with the category.`,
+        data: { itemCount, requiresItemDeletionConfirmation: true },
+      });
+    }
+
+    if (itemCount > 0) {
+      await MenuItem.deleteMany(itemFilter);
+    }
+    await category.deleteOne();
+
+    return res.status(200).json({
+      success: true,
+      message: "Menu category deleted successfully",
+      data: { deletedCategoryId: category._id, deletedItemCount: itemCount },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
  * POST /api/canteens/:canteenId/menu/items
  */
 const createMenuItem = async (req, res, next) => {
@@ -200,6 +260,7 @@ const createMenuItem = async (req, res, next) => {
       preparationTime: req.body.preparationTime ?? 0,
       imageUrl: trimValue(req.body.imageUrl) || "",
       isAvailable: req.body.isAvailable ?? true,
+      availableDays: req.body.availableDays,
     });
 
     return res.status(201).json({
@@ -255,6 +316,7 @@ const updateMenuItem = async (req, res, next) => {
       "preparationTime",
       "imageUrl",
       "isAvailable",
+      "availableDays",
     ];
     const updates = {};
 
@@ -294,6 +356,46 @@ const updateMenuItem = async (req, res, next) => {
       data: {
         item,
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/*
+ * DELETE /api/canteens/:canteenId/menu/items/:itemId
+ */
+const deleteMenuItem = async (req, res, next) => {
+  try {
+    const canteen = await findOwnedCanteen(
+      req.params.canteenId,
+      req.user.id,
+    );
+
+    if (!canteen) {
+      return res.status(404).json({
+        success: false,
+        message: "Canteen not found",
+      });
+    }
+
+    const item = await MenuItem.findOneAndDelete({
+      _id: req.params.itemId,
+      canteenId: canteen._id,
+      ownerId: req.user.id,
+    });
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu item not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Menu item deleted successfully",
+      data: { deletedItemId: item._id },
     });
   } catch (error) {
     next(error);
@@ -357,7 +459,9 @@ module.exports = {
   getMyCanteenMenu,
   createMenuCategory,
   updateMenuCategory,
+  deleteMenuCategory,
   createMenuItem,
   updateMenuItem,
+  deleteMenuItem,
   updateMenuItemAvailability,
 };

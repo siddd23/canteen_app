@@ -6,6 +6,7 @@ import '../../../../core/routes/app_router.dart';
 import '../../../../core/utils/api_exception.dart';
 import '../../../../shared/services/canteen_service.dart';
 import '../../../../shared/services/auth_service.dart';
+import '../../../../shared/models/canteen.dart';
 
 class CreateCanteenScreen extends StatefulWidget {
   const CreateCanteenScreen({super.key});
@@ -21,8 +22,10 @@ class _CreateCanteenScreenState extends State<CreateCanteenScreen> {
   final _addressController = TextEditingController();
   final _cityController = TextEditingController();
   final _contactController = TextEditingController();
-  final _openingTimeController = TextEditingController();
-  final _closingTimeController = TextEditingController();
+  final _openingTimeController = TextEditingController(text: '12:30 PM');
+  final _closingTimeController = TextEditingController(text: '3:00 PM');
+  final _dinnerOpeningController = TextEditingController(text: '7:30 PM');
+  final _dinnerClosingController = TextEditingController(text: '10:00 PM');
 
   bool _isLoading = false;
 
@@ -34,6 +37,8 @@ class _CreateCanteenScreenState extends State<CreateCanteenScreen> {
     _contactController.dispose();
     _openingTimeController.dispose();
     _closingTimeController.dispose();
+    _dinnerOpeningController.dispose();
+    _dinnerClosingController.dispose();
     super.dispose();
   }
 
@@ -73,6 +78,10 @@ class _CreateCanteenScreenState extends State<CreateCanteenScreen> {
         contactNumber: _contactController.text,
         openingTime: _openingTimeController.text,
         closingTime: _closingTimeController.text,
+        serviceSlots: [
+          CanteenServiceSlot(label: 'Lunch', openingTime: _openingTimeController.text, closingTime: _closingTimeController.text),
+          CanteenServiceSlot(label: 'Dinner', openingTime: _dinnerOpeningController.text, closingTime: _dinnerClosingController.text),
+        ],
       );
 
       if (!mounted) return;
@@ -237,7 +246,7 @@ class _CreateCanteenScreenState extends State<CreateCanteenScreen> {
                             validator: (value) =>
                                 _requiredValidator(value, 'opening time'),
                             decoration: const InputDecoration(
-                              labelText: 'Opening time',
+                              labelText: 'Lunch starts',
                               prefixIcon: Icon(Icons.schedule_outlined),
                             ),
                           ),
@@ -251,11 +260,31 @@ class _CreateCanteenScreenState extends State<CreateCanteenScreen> {
                             validator: (value) =>
                                 _requiredValidator(value, 'closing time'),
                             decoration: const InputDecoration(
-                              labelText: 'Closing time',
+                              labelText: 'Lunch ends',
                               prefixIcon: Icon(Icons.schedule_outlined),
                             ),
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: TextFormField(
+                          controller: _dinnerOpeningController,
+                          readOnly: true,
+                          onTap: () => _selectTime(_dinnerOpeningController),
+                          validator: (value) => _requiredValidator(value, 'dinner start time'),
+                          decoration: const InputDecoration(labelText: 'Dinner starts', prefixIcon: Icon(Icons.nightlife_outlined)),
+                        )),
+                        const SizedBox(width: 12),
+                        Expanded(child: TextFormField(
+                          controller: _dinnerClosingController,
+                          readOnly: true,
+                          onTap: () => _selectTime(_dinnerClosingController),
+                          validator: (value) => _requiredValidator(value, 'dinner end time'),
+                          decoration: const InputDecoration(labelText: 'Dinner ends', prefixIcon: Icon(Icons.schedule_outlined)),
+                        )),
                       ],
                     ),
                     const SizedBox(height: 28),

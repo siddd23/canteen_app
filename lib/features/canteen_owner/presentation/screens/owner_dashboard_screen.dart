@@ -429,6 +429,19 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
     });
   }
 
+  Future<void> _editCanteen(Canteen canteen) async {
+    final updated = await showDialog<Canteen>(
+      context: context,
+      builder: (context) => _EditCanteenDialog(canteen: canteen),
+    );
+    if (updated == null || !mounted) return;
+    setState(() {
+      final index = _canteens.indexWhere((item) => item.id == updated.id);
+      if (index >= 0) _canteens[index] = updated;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Canteen details updated')));
+  }
+
   Future<void> _loadOwnerPreferences() async {
     try {
       final settings = await OwnerAccountService.instance.getProfile();
@@ -746,7 +759,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen>
             LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= 820;
-                final details = _CanteenDetailsCard(canteen: canteen);
+                final details = _CanteenDetailsCard(canteen: canteen, onEdit: () => _editCanteen(canteen));
                 final actions = _QuickActionsCard(
                   onOrders: () => _selectNavigation(2),
                   onMenu: () => _selectNavigation(3),
@@ -811,7 +824,7 @@ class _OwnerWelcomeHeader extends StatelessWidget {
             ),
             const SizedBox(height: 7),
             Text(
-              '${canteen.city} · ${canteen.openingTime}–${canteen.closingTime}',
+              '${canteen.city} · ${canteen.serviceHoursLabel}',
               style: const TextStyle(color: AppColors.textSecondary),
             ),
           ],
@@ -892,7 +905,7 @@ class _OwnerWelcomeHeader extends StatelessWidget {
                           ),
                           const SizedBox(height: 3),
                           Text(
-                            '${canteen.city}  •  ${canteen.openingTime}–${canteen.closingTime}',
+                            '${canteen.city}  •  ${canteen.serviceHoursLabel}',
                             style: const TextStyle(
                               color: Color(0xFFB9C2D3),
                               fontSize: 12,
@@ -1228,9 +1241,10 @@ class _MetricCard extends StatelessWidget {
 }
 
 class _CanteenDetailsCard extends StatelessWidget {
-  const _CanteenDetailsCard({required this.canteen});
+  const _CanteenDetailsCard({required this.canteen, required this.onEdit});
 
   final Canteen canteen;
+  final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -1247,7 +1261,7 @@ class _CanteenDetailsCard extends StatelessWidget {
           _DetailRow(
             icon: Icons.schedule_outlined,
             label: 'Operating hours',
-            value: '${canteen.openingTime} – ${canteen.closingTime}',
+            value: canteen.serviceHoursLabel,
           ),
           _DetailRow(
             icon: Icons.phone_outlined,
@@ -1263,10 +1277,65 @@ class _CanteenDetailsCard extends StatelessWidget {
                 : AppColors.textSecondary,
             showDivider: false,
           ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: OutlinedButton.icon(onPressed: onEdit, icon: const Icon(Icons.edit_outlined), label: const Text('Edit details')),
+          ),
         ],
       ),
     );
   }
+}
+
+class _EditCanteenDialog extends StatefulWidget {
+  const _EditCanteenDialog({required this.canteen});
+  final Canteen canteen;
+  @override State<_EditCanteenDialog> createState() => _EditCanteenDialogState();
+}
+
+class _EditCanteenDialogState extends State<_EditCanteenDialog> {
+  final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _name, _address, _city, _contact, _lunchStart, _lunchEnd, _dinnerStart, _dinnerEnd;
+  bool _saving = false;
+  @override void initState() {
+    super.initState();
+    final slots = widget.canteen.serviceSlots;
+    _name = TextEditingController(text: widget.canteen.name);
+    _address = TextEditingController(text: widget.canteen.address);
+    _city = TextEditingController(text: widget.canteen.city);
+    _contact = TextEditingController(text: widget.canteen.contactNumber);
+    _lunchStart = TextEditingController(text: slots.isNotEmpty ? slots[0].openingTime : widget.canteen.openingTime);
+    _lunchEnd = TextEditingController(text: slots.isNotEmpty ? slots[0].closingTime : '3:00 PM');
+    _dinnerStart = TextEditingController(text: slots.length > 1 ? slots[1].openingTime : '7:30 PM');
+    _dinnerEnd = TextEditingController(text: slots.length > 1 ? slots[1].closingTime : widget.canteen.closingTime);
+  }
+  @override void dispose() { for (final c in [_name,_address,_city,_contact,_lunchStart,_lunchEnd,_dinnerStart,_dinnerEnd]) { c.dispose(); } super.dispose(); }
+  Future<void> _time(TextEditingController controller) async { final value = await showTimePicker(context: context, initialTime: TimeOfDay.now()); if (value != null && mounted) controller.text = MaterialLocalizations.of(context).formatTimeOfDay(value); }
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      final updated = await CanteenService.instance.updateCanteen(
+        canteenId: widget.canteen.id, name: _name.text, address: _address.text, city: _city.text, contactNumber: _contact.text,
+        serviceSlots: [
+          CanteenServiceSlot(label: 'Lunch', openingTime: _lunchStart.text, closingTime: _lunchEnd.text),
+          CanteenServiceSlot(label: 'Dinner', openingTime: _dinnerStart.text, closingTime: _dinnerEnd.text),
+        ],
+      );
+      if (mounted) Navigator.pop(context, updated);
+    } on ApiException catch (error) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(error.message))); }
+    finally { if (mounted) setState(() => _saving = false); }
+  }
+  Widget _field(TextEditingController controller, String label, {bool time = false, int lines = 1}) => TextFormField(controller: controller, maxLines: lines, readOnly: time, onTap: time ? () => _time(controller) : null, validator: (value) => (value?.trim().isEmpty ?? true) ? '$label is required' : null, decoration: InputDecoration(labelText: label));
+  @override Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Edit canteen'),
+    content: SizedBox(width: 520, child: Form(key: _formKey, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      _field(_name,'Canteen name'), const SizedBox(height: 12), _field(_address,'Address',lines: 2), const SizedBox(height: 12), _field(_city,'City'), const SizedBox(height: 12), _field(_contact,'Contact number'), const SizedBox(height: 18),
+      const Align(alignment: Alignment.centerLeft, child: Text('Lunch slot', style: TextStyle(fontWeight: FontWeight.w800))), const SizedBox(height: 8), Row(children:[Expanded(child:_field(_lunchStart,'Starts',time:true)),const SizedBox(width:8),Expanded(child:_field(_lunchEnd,'Ends',time:true))]), const SizedBox(height: 16),
+      const Align(alignment: Alignment.centerLeft, child: Text('Dinner slot', style: TextStyle(fontWeight: FontWeight.w800))), const SizedBox(height: 8), Row(children:[Expanded(child:_field(_dinnerStart,'Starts',time:true)),const SizedBox(width:8),Expanded(child:_field(_dinnerEnd,'Ends',time:true))]),
+    ])))),
+    actions: [TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Cancel')), FilledButton(onPressed: _saving ? null : _save, child: Text(_saving ? 'Saving...' : 'Save changes'))],
+  );
 }
 
 class _QuickActionsCard extends StatelessWidget {

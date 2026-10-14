@@ -70,6 +70,39 @@ class OrderService {
     );
   }
 
+  Future<int> deleteSelectedHistory(List<String> orderIds) async {
+    final response = await ApiService.instance.delete(
+      '${ApiConstants.orders}/history',
+      body: {'mode': 'selected', 'orderIds': orderIds},
+    );
+    final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
+    return (data['deletedCount'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<int> deletePaidHistory({
+    String? officeId,
+    String? canteenId,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+  }) async {
+    String date(DateTime value) =>
+        '${value.year.toString().padLeft(4, '0')}-'
+        '${value.month.toString().padLeft(2, '0')}-'
+        '${value.day.toString().padLeft(2, '0')}';
+    final response = await ApiService.instance.delete(
+      '${ApiConstants.orders}/history',
+      body: {
+        'mode': 'paid',
+        if (officeId != null && officeId.isNotEmpty) 'officeId': officeId,
+        if (canteenId != null && canteenId.isNotEmpty) 'canteenId': canteenId,
+        if (dateFrom != null) 'dateFrom': date(dateFrom),
+        if (dateTo != null) 'dateTo': date(dateTo),
+      },
+    );
+    final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
+    return (data['deletedCount'] as num?)?.toInt() ?? 0;
+  }
+
   Future<List<CanteenOrder>> getOfficeStatement({
     required String officeId,
     DateTime? dateFrom,
@@ -90,6 +123,32 @@ class OrderService {
     final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
     final rawOrders = data['orders'] as List? ?? const [];
     return rawOrders
+        .whereType<Map>()
+        .map((item) => CanteenOrder.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<List<CanteenOrder>> getCustomerStatement({
+    required String customerName,
+    required String mobile,
+    String? canteenId,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+  }) async {
+    String date(DateTime value) => '${value.year.toString().padLeft(4, '0')}-'
+        '${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
+    final response = await ApiService.instance.get(
+      '${ApiConstants.orders}/customer-statement',
+      queryParameters: {
+        'customerName': customerName,
+        'mobile': mobile,
+        if (canteenId != null && canteenId.isNotEmpty) 'canteenId': canteenId,
+        if (dateFrom != null) 'dateFrom': date(dateFrom),
+        if (dateTo != null) 'dateTo': date(dateTo),
+      },
+    );
+    final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
+    return (data['orders'] as List? ?? const [])
         .whereType<Map>()
         .map((item) => CanteenOrder.fromJson(Map<String, dynamic>.from(item)))
         .toList();

@@ -145,6 +145,35 @@ class ApiService {
     }
   }
 
+  Future<Map<String, dynamic>> delete(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    bool authenticated = true,
+  }) async {
+    try {
+      final request = http.Request('DELETE', _createUri(endpoint))
+        ..headers.addAll(
+          await _createHeaders(authenticated: authenticated),
+        )
+        ..body = jsonEncode(body ?? {});
+      final streamed = await _client.send(request).timeout(ApiConstants.timeout);
+      return _handleResponse(await http.Response.fromStream(streamed));
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiException(message: 'The server took too long to respond.');
+    } on SocketException {
+      throw const ApiException(
+        message:
+            'Cannot connect to the server. Check your network and backend URL.',
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        message: 'Unable to connect to the backend server.',
+      );
+    }
+  }
+
   Map<String, dynamic> _handleResponse(http.Response response) {
     Map<String, dynamic> decodedResponse = {};
 

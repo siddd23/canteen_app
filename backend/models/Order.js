@@ -42,6 +42,7 @@ const orderSchema = new mongoose.Schema(
       index: true,
       immutable: true,
     },
+    customerId: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", default: null, index: true, immutable: true },
     orderSource: {
       type: String,
       enum: ["office_qr", "canteen_master_qr"],
@@ -136,6 +137,9 @@ const orderSchema = new mongoose.Schema(
       default: "Unpaid",
       index: true,
     },
+    fulfillmentType: { type: String, enum: ["asap", "scheduled"], default: "asap", index: true },
+    scheduledFor: { type: Date, default: null, index: true },
+    scheduledSlot: { type: String, trim: true, maxlength: 40, default: "" },
     acceptedAt: { type: Date, default: null },
     deliveredAt: { type: Date, default: null },
     rejectedAt: { type: Date, default: null },
@@ -148,6 +152,8 @@ const orderSchema = new mongoose.Schema(
 orderSchema.index({ ownerId: 1, canteenId: 1, createdAt: -1 });
 orderSchema.index({ canteenId: 1, orderStatus: 1, createdAt: -1 });
 orderSchema.index({ canteenId: 1, paymentStatus: 1, deliveredAt: -1 });
+orderSchema.index({ customerId: 1, createdAt: -1 });
+orderSchema.index({ fulfillmentType: 1, scheduledFor: 1, orderStatus: 1 });
 
 orderSchema.pre("validate", function setEmployeeKey() {
   if (this.customerName && this.mobile) {

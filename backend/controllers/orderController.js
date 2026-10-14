@@ -102,6 +102,65 @@ const getOrderHistory = async (req, res, next) => {
   }
 };
 
+const deleteOrderHistory = async (req, res, next) => {
+  try {
+    const mode = req.body.mode || "selected";
+    const terminalStatuses = ["Delivered", "Rejected", "Cancelled"];
+    const filter = {
+      ownerId: req.user.id,
+      orderStatus: { $in: terminalStatuses },
+    };
+
+    if (mode === "selected") {
+      const ids = [...new Set(req.body.orderIds || [])];
+      if (ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: "Select at least one history record",
+        });
+      }
+      filter._id = { $in: ids };
+      filter.$or = [
+        { paymentStatus: "Paid" },
+        { orderStatus: { $in: ["Rejected", "Cancelled"] } },
+      ];
+    } else {
+      // A filtered cleanup never removes unpaid or Pay Later records.
+      filter.paymentStatus = "Paid";
+      if (req.body.canteenId) filter.canteenId = req.body.canteenId;
+      if (req.body.officeId) filter.officeId = req.body.officeId;
+      if (req.body.dateFrom || req.body.dateTo) {
+        filter.createdAt = {};
+        if (req.body.dateFrom) {
+          filter.createdAt.$gte = new Date(`${req.body.dateFrom}T00:00:00+05:30`);
+        }
+        if (req.body.dateTo) {
+          filter.createdAt.$lte = new Date(`${req.body.dateTo}T23:59:59.999+05:30`);
+        }
+        if (
+          filter.createdAt.$gte &&
+          filter.createdAt.$lte &&
+          filter.createdAt.$gte > filter.createdAt.$lte
+        ) {
+          return res.status(400).json({
+            success: false,
+            message: "From date cannot be later than to date",
+          });
+        }
+      }
+    }
+
+    const result = await Order.deleteMany(filter);
+    return res.status(200).json({
+      success: true,
+      message: `${result.deletedCount} history record${result.deletedCount === 1 ? "" : "s"} deleted`,
+      data: { deletedCount: result.deletedCount },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getOfficeStatement = async (req, res, next) => {
   try {
     const filter = { ownerId: req.user.id, officeId: req.query.officeId };
@@ -139,6 +198,45 @@ const getOfficeStatement = async (req, res, next) => {
             .reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
           outstandingAmount: orders
             .filter((order) => order.paymentStatus === "PayLater")
+            .reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getCustomerStatement = async (req, res, next) => {
+  try {
+    const requestedKey = employeeKey(req.query.customerName, req.query.mobile);
+    const filter = {
+      ownerId: req.user.id,
+      $or: [
+        { employeeKey: requestedKey },
+        {
+          customerName: new RegExp(`^${escapeRegex(req.query.customerName.trim())}$`, "i"),
+          mobile: req.query.mobile.trim(),
+        },
+      ],
+    };
+    if (req.query.canteenId) filter.canteenId = req.query.canteenId;
+    if (req.query.dateFrom || req.query.dateTo) {
+      filter.createdAt = {};
+      if (req.query.dateFrom) filter.createdAt.$gte = new Date(`${req.query.dateFrom}T00:00:00+05:30`);
+      if (req.query.dateTo) filter.createdAt.$lte = new Date(`${req.query.dateTo}T23:59:59.999+05:30`);
+    }
+    const orders = await Order.find(filter).sort({ createdAt: -1 }).lean();
+    return res.status(200).json({
+      success: true,
+      data: {
+        orders,
+        summary: {
+          orderCount: orders.length,
+          totalAmount: orders.reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
+          paidAmount: orders.filter((order) => order.paymentStatus === "Paid")
+            .reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
+          outstandingAmount: orders.filter((order) => order.paymentStatus === "PayLater")
             .reduce((sum, order) => sum + Number(order.grandTotal || 0), 0),
         },
       },
@@ -670,7 +768,9 @@ const settleEmployeePayLater = async (req, res, next) => {
 module.exports = {
   getSalesReport,
   getOrderHistory,
+  deleteOrderHistory,
   getOfficeStatement,
+  getCustomerStatement,
   getDashboardSummary,
   getOrderNotifications,
   getMyOrders,

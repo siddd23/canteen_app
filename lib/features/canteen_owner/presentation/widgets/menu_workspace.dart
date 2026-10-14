@@ -179,6 +179,104 @@ class _MenuWorkspaceState extends State<MenuWorkspace> {
     }
   }
 
+  Future<void> _showCategoryActions(MenuCategory category) async {
+    final action = await showDialog<String>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: Text(category.name),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'edit'),
+            child: const ListTile(
+              leading: Icon(Icons.edit_outlined),
+              title: Text('Edit category'),
+            ),
+          ),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(context, 'delete'),
+            child: const ListTile(
+              leading: Icon(Icons.delete_outline_rounded, color: AppColors.error),
+              title: Text(
+                'Delete category',
+                style: TextStyle(color: AppColors.error),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (action == 'edit') {
+      await _openCategoryDialog(category);
+    } else if (action == 'delete') {
+      await _deleteCategory(category);
+    }
+  }
+
+  Future<bool> _confirmDelete({
+    required String title,
+    required String message,
+  }) async {
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.error),
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Delete permanently'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Future<void> _deleteCategory(MenuCategory category) async {
+    final canteenId = _selectedCanteenId;
+    if (canteenId == null) return;
+    final itemCount = (_snapshot?.items ?? const <CanteenMenuItem>[])
+        .where((item) => item.categoryId == category.id)
+        .length;
+    final confirmed = await _confirmDelete(
+      title: 'Delete ${category.name}?',
+      message: itemCount == 0
+          ? 'This category will be permanently removed.'
+          : 'This category contains $itemCount menu item${itemCount == 1 ? '' : 's'}. The category and all of those items will be permanently deleted.',
+    );
+    if (!confirmed || !mounted) return;
+
+    try {
+      await MenuService.instance.deleteCategory(
+        canteenId: canteenId,
+        categoryId: category.id,
+        deleteItems: itemCount > 0,
+      );
+      if (!mounted) return;
+      if (_selectedCategoryId == category.id) _selectedCategoryId = null;
+      _showMessage(
+        itemCount == 0
+            ? 'Category deleted.'
+            : 'Category and $itemCount item${itemCount == 1 ? '' : 's'} deleted.',
+      );
+      await _loadMenu();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await widget.onSessionExpired();
+        return;
+      }
+      _showMessage(error.message, isError: true);
+    }
+  }
+
   Future<void> _openItemDialog([CanteenMenuItem? item]) async {
     final categories = _snapshot?.categories ?? const <MenuCategory>[];
     if (categories.isEmpty) {
@@ -207,6 +305,7 @@ class _MenuWorkspaceState extends State<MenuWorkspace> {
           preparationTime: result.preparationTime,
           imageUrl: result.imageUrl,
           isAvailable: result.isAvailable,
+          availableDays: result.availableDays,
         );
       } else {
         await MenuService.instance.updateItem(
@@ -220,6 +319,7 @@ class _MenuWorkspaceState extends State<MenuWorkspace> {
           preparationTime: result.preparationTime,
           imageUrl: result.imageUrl,
           isAvailable: result.isAvailable,
+          availableDays: result.availableDays,
         );
       }
       if (!mounted) return;
@@ -247,6 +347,37 @@ class _MenuWorkspaceState extends State<MenuWorkspace> {
         isAvailable: value,
       );
       if (!mounted) return;
+      await _loadMenu();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      if (error.statusCode == 401 || error.statusCode == 403) {
+        await widget.onSessionExpired();
+        return;
+      }
+      _showMessage(error.message, isError: true);
+    } finally {
+      if (mounted) setState(() => _processingItemId = null);
+    }
+  }
+
+  Future<void> _deleteItem(CanteenMenuItem item) async {
+    final canteenId = _selectedCanteenId;
+    if (canteenId == null) return;
+    final confirmed = await _confirmDelete(
+      title: 'Delete ${item.name}?',
+      message:
+          'This menu item will be permanently removed. Past order history will remain unchanged.',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _processingItemId = item.id);
+    try {
+      await MenuService.instance.deleteItem(
+        canteenId: canteenId,
+        itemId: item.id,
+      );
+      if (!mounted) return;
+      _showMessage('Menu item deleted.');
       await _loadMenu();
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -317,7 +448,7 @@ class _MenuWorkspaceState extends State<MenuWorkspace> {
               categories: snapshot.categories,
               selectedCategoryId: _selectedCategoryId,
               onSelected: (id) => setState(() => _selectedCategoryId = id),
-              onEdit: _openCategoryDialog,
+              onManage: _showCategoryActions,
             ),
             const SizedBox(height: 16),
             _MenuToolbar(
@@ -353,6 +484,7 @@ class _MenuWorkspaceState extends State<MenuWorkspace> {
                 categories: snapshot.categories,
                 processingItemId: _processingItemId,
                 onEdit: _openItemDialog,
+                onDelete: _deleteItem,
                 onAvailabilityChanged: _toggleAvailability,
               ),
           ],
@@ -583,12 +715,12 @@ class _CategoryStrip extends StatelessWidget {
     required this.categories,
     required this.selectedCategoryId,
     required this.onSelected,
-    required this.onEdit,
+    required this.onManage,
   });
   final List<MenuCategory> categories;
   final String? selectedCategoryId;
   final ValueChanged<String?> onSelected;
-  final ValueChanged<MenuCategory> onEdit;
+  final ValueChanged<MenuCategory> onManage;
 
   @override
   Widget build(BuildContext context) {
@@ -622,9 +754,9 @@ class _CategoryStrip extends StatelessWidget {
                 label: Text(category.name),
                 selected: selectedCategoryId == category.id,
                 onSelected: (_) => onSelected(category.id),
-                onDeleted: () => onEdit(category),
-                deleteIcon: const Icon(Icons.edit_outlined, size: 17),
-                deleteButtonTooltipMessage: 'Edit category',
+                onDeleted: () => onManage(category),
+                deleteIcon: const Icon(Icons.more_horiz_rounded, size: 18),
+                deleteButtonTooltipMessage: 'Category actions',
               ),
             ),
           ),
@@ -676,12 +808,14 @@ class _MenuItemGrid extends StatelessWidget {
     required this.categories,
     required this.processingItemId,
     required this.onEdit,
+    required this.onDelete,
     required this.onAvailabilityChanged,
   });
   final List<CanteenMenuItem> items;
   final List<MenuCategory> categories;
   final String? processingItemId;
   final ValueChanged<CanteenMenuItem> onEdit;
+  final ValueChanged<CanteenMenuItem> onDelete;
   final void Function(CanteenMenuItem item, bool value) onAvailabilityChanged;
 
   String _categoryName(String id) {
@@ -713,6 +847,7 @@ class _MenuItemGrid extends StatelessWidget {
                     categoryName: _categoryName(item.categoryId),
                     isProcessing: processingItemId == item.id,
                     onEdit: () => onEdit(item),
+                    onDelete: () => onDelete(item),
                     onAvailabilityChanged: (value) =>
                         onAvailabilityChanged(item, value),
                   ),
@@ -731,12 +866,14 @@ class _MenuItemCard extends StatelessWidget {
     required this.categoryName,
     required this.isProcessing,
     required this.onEdit,
+    required this.onDelete,
     required this.onAvailabilityChanged,
   });
   final CanteenMenuItem item;
   final String categoryName;
   final bool isProcessing;
   final VoidCallback onEdit;
+  final VoidCallback onDelete;
   final ValueChanged<bool> onAvailabilityChanged;
 
   @override
@@ -779,10 +916,38 @@ class _MenuItemCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    IconButton(
-                      tooltip: 'Edit item',
-                      onPressed: onEdit,
-                      icon: const Icon(Icons.edit_outlined, size: 20),
+                    PopupMenuButton<String>(
+                      tooltip: 'Item actions',
+                      enabled: !isProcessing,
+                      icon: const Icon(Icons.more_vert_rounded, size: 21),
+                      onSelected: (value) {
+                        if (value == 'edit') onEdit();
+                        if (value == 'delete') onDelete();
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: ListTile(
+                            dense: true,
+                            leading: Icon(Icons.edit_outlined),
+                            title: Text('Edit item'),
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'delete',
+                          child: ListTile(
+                            dense: true,
+                            leading: Icon(
+                              Icons.delete_outline_rounded,
+                              color: AppColors.error,
+                            ),
+                            title: Text(
+                              'Delete item',
+                              style: TextStyle(color: AppColors.error),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -807,6 +972,17 @@ class _MenuItemCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                const SizedBox(height: 9),
+                Text(
+                  item.availableDays.isEmpty || item.availableDays.length == 7
+                      ? 'Every day'
+                      : item.availableDays.map((day) => day.substring(0, 3)).join(' · '),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 15),
                 Row(
                   children: [
@@ -1060,6 +1236,7 @@ class _ItemFormValue {
     required this.preparationTime,
     required this.imageUrl,
     required this.isAvailable,
+    required this.availableDays,
   });
   final String categoryId;
   final String name;
@@ -1069,6 +1246,7 @@ class _ItemFormValue {
   final int preparationTime;
   final String imageUrl;
   final bool isAvailable;
+  final List<String> availableDays;
 }
 
 class _ItemDialog extends StatefulWidget {
@@ -1090,6 +1268,8 @@ class _ItemDialogState extends State<_ItemDialog> {
   late String _categoryId;
   late String _foodType;
   late bool _isAvailable;
+  late Set<String> _availableDays;
+  static const _days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
   @override
   void initState() {
@@ -1112,6 +1292,9 @@ class _ItemDialogState extends State<_ItemDialog> {
         : widget.categories.first.id;
     _foodType = item?.foodType ?? 'Vegetarian';
     _isAvailable = item?.isAvailable ?? true;
+    _availableDays = (item == null || item.availableDays.isEmpty)
+        ? _days.toSet()
+        : item.availableDays.toSet();
   }
 
   @override
@@ -1261,6 +1444,26 @@ class _ItemDialogState extends State<_ItemDialog> {
                   value: _isAvailable,
                   onChanged: (value) => setState(() => _isAvailable = value),
                 ),
+                const SizedBox(height: 8),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Available days', style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 7,
+                    runSpacing: 7,
+                    children: _days.map((day) => FilterChip(
+                      label: Text(day.substring(0, 3)),
+                      selected: _availableDays.contains(day),
+                      onSelected: (selected) => setState(() {
+                        if (selected) { _availableDays.add(day); } else if (_availableDays.length > 1) { _availableDays.remove(day); }
+                      }),
+                    )).toList(),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1285,6 +1488,7 @@ class _ItemDialogState extends State<_ItemDialog> {
                 preparationTime: int.parse(_timeController.text.trim()),
                 imageUrl: _imageController.text.trim(),
                 isAvailable: _isAvailable,
+                availableDays: _days.where(_availableDays.contains).toList(),
               ),
             );
           },

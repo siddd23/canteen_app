@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,66 @@ import '../../shared/services/api_service.dart';
 import '../../shared/services/token_storage_service.dart';
 import '../constants/api_constants.dart';
 import '../routes/app_router.dart';
+
+const _orderAlarmChannelId = 'urgent_order_alarm_v1';
+
+int _orderNotificationId(String orderId) =>
+    orderId.codeUnits.fold<int>(1701, (value, unit) => ((value * 31) + unit) & 0x7fffffff);
+
+@pragma('vm:entry-point')
+Future<void> showPersistentOrderAlarm(RemoteMessage message) async {
+  if (message.data['type'] != 'new_order') return;
+  final orderId = message.data['orderId']?.toString() ?? '';
+  if (orderId.isEmpty) return;
+  final plugin = FlutterLocalNotificationsPlugin();
+  await plugin.initialize(
+    settings: const InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+    ),
+  );
+  const channel = AndroidNotificationChannel(
+    _orderAlarmChannelId,
+    'Urgent order alarms',
+    description: 'Keeps ringing until the pending order is opened and handled.',
+    importance: Importance.max,
+    playSound: true,
+    sound: RawResourceAndroidNotificationSound('order_bell'),
+    audioAttributesUsage: AudioAttributesUsage.alarm,
+  );
+  await plugin
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+      ?.createNotificationChannel(channel);
+  final orderNumber = message.data['orderNumber']?.toString() ?? 'New order';
+  await plugin.show(
+    id: _orderNotificationId(orderId),
+    title: 'New BookFood order',
+    body: '$orderNumber is waiting for acceptance',
+    notificationDetails: NotificationDetails(
+      android: AndroidNotificationDetails(
+        _orderAlarmChannelId,
+        'Urgent order alarms',
+        channelDescription:
+        'Keeps ringing until the pending order is handled.',
+        importance: Importance.max,
+        priority: Priority.max,
+        category: AndroidNotificationCategory.alarm,
+        fullScreenIntent: true,
+        ongoing: true,
+        autoCancel: false,
+        playSound: true,
+        sound: const RawResourceAndroidNotificationSound(
+          'order_bell',
+        ),
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+        additionalFlags: Int32List.fromList(const [4]),
+      ),
+    ),
+    payload: Uri(queryParameters: {
+      'orderId': orderId,
+      'canteenId': message.data['canteenId']?.toString() ?? '',
+    }).query,
+  );
+}
 
 class PendingOrderNotification {
   const PendingOrderNotification({
@@ -38,18 +99,20 @@ class PushNotificationService {
 
   static const AndroidNotificationChannel _newOrdersChannel =
       AndroidNotificationChannel(
-        'new_orders_v2',
-        'New orders',
-        description: 'Alerts the canteen owner when a new order is placed.',
+        _orderAlarmChannelId,
+        'Urgent order alarms',
+        description: 'Keeps ringing until the pending order is handled.',
         importance: Importance.max,
         playSound: true,
         sound: RawResourceAndroidNotificationSound('order_bell'),
+        audioAttributesUsage: AudioAttributesUsage.alarm,
       );
 
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<RemoteMessage>? _openedMessageSubscription;
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
   bool _initialized = false;
   final Completer<void> _readyCompleter = Completer<void>();
   PendingOrderNotification? _pendingOrder;
@@ -98,6 +161,9 @@ class PushNotificationService {
       _openedMessageSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
         _openNotification,
       );
+      _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen((message) {
+        unawaited(showPersistentOrderAlarm(message));
+      });
 
       final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
       if (initialMessage != null) {
@@ -127,6 +193,15 @@ class PushNotificationService {
         );
       },
     );
+    final launchDetails = await _localNotifications.getNotificationAppLaunchDetails();
+    final launchResponse = launchDetails?.notificationResponse;
+    if (launchDetails?.didNotificationLaunchApp ?? false) {
+      final data = Uri.splitQueryString(launchResponse?.payload ?? '');
+      _openOrdersScreen(
+        orderId: data['orderId'] ?? '',
+        canteenId: data['canteenId'] ?? '',
+      );
+    }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       await _localNotifications
@@ -195,6 +270,11 @@ class PushNotificationService {
     }
   }
 
+  Future<void> stopOrderAlarm(String orderId) async {
+    if (!_supportsNativePush || orderId.isEmpty) return;
+    await _localNotifications.cancel(id: _orderNotificationId(orderId));
+  }
+
   void _openOrdersScreen({
     required String orderId,
     required String canteenId,
@@ -217,6 +297,7 @@ class PushNotificationService {
   Future<void> dispose() async {
     await _tokenRefreshSubscription?.cancel();
     await _openedMessageSubscription?.cancel();
+    await _foregroundMessageSubscription?.cancel();
     _initialized = false;
   }
 }

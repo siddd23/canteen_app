@@ -9,8 +9,10 @@ const {
   getMyCanteenMenu,
   createMenuCategory,
   updateMenuCategory,
+  deleteMenuCategory,
   createMenuItem,
   updateMenuItem,
+  deleteMenuItem,
   updateMenuItemAvailability,
 } = require("../controllers/menuController");
 
@@ -108,6 +110,10 @@ const menuItemCreateValidation = [
     .optional()
     .isBoolean()
     .withMessage("Availability must be true or false"),
+  body("availableDays").optional().isArray({ min: 1, max: 7 })
+    .withMessage("Select between one and seven menu days"),
+  body("availableDays.*").optional().isIn(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    .withMessage("Invalid menu day"),
 ];
 
 const menuItemUpdateValidation = [
@@ -155,6 +161,10 @@ const menuItemUpdateValidation = [
     .optional()
     .isBoolean()
     .withMessage("Availability must be true or false"),
+  body("availableDays").optional().isArray({ min: 1, max: 7 })
+    .withMessage("Select between one and seven menu days"),
+  body("availableDays.*").optional().isIn(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])
+    .withMessage("Invalid menu day"),
 ];
 
 router.get(
@@ -182,6 +192,20 @@ router.patch(
   updateMenuCategory,
 );
 
+router.delete(
+  "/:canteenId/menu/categories/:categoryId",
+  [
+    ...canteenIdValidation,
+    ...categoryIdValidation,
+    body("deleteItems")
+      .optional()
+      .isBoolean()
+      .withMessage("deleteItems must be true or false"),
+  ],
+  validateRequest,
+  deleteMenuCategory,
+);
+
 router.post(
   "/:canteenId/menu/items",
   [...canteenIdValidation, ...menuItemCreateValidation],
@@ -194,6 +218,13 @@ router.patch(
   [...canteenIdValidation, ...itemIdValidation, ...menuItemUpdateValidation],
   validateRequest,
   updateMenuItem,
+);
+
+router.delete(
+  "/:canteenId/menu/items/:itemId",
+  [...canteenIdValidation, ...itemIdValidation],
+  validateRequest,
+  deleteMenuItem,
 );
 
 router.patch(

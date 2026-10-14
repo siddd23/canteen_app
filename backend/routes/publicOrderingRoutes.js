@@ -2,6 +2,7 @@ const express = require("express");
 const { body, param, query } = require("express-validator");
 
 const validateRequest = require("../middleware/validationMiddleware");
+const { optionalCustomer } = require("../middleware/customerAuthMiddleware");
 const {
   resolveOfficeQr,
   getPublicCanteenMenu,
@@ -55,6 +56,9 @@ const masterOrderValidation = [
   body("items.*.menuItemId").isMongoId().withMessage("Invalid menu item ID"),
   body("items.*.quantity").isInt({ min: 1, max: 20 })
     .withMessage("Item quantity must be between 1 and 20").toInt(),
+  body("fulfillmentType").optional().isIn(["asap", "scheduled"]),
+  body("scheduledFor").if(body("fulfillmentType").equals("scheduled")).isISO8601(),
+  body("scheduledSlot").if(body("fulfillmentType").equals("scheduled")).trim().isLength({ min: 2, max: 40 }),
 ];
 
 router.get(
@@ -75,6 +79,7 @@ router.post(
   "/canteens/:publicCode/orders",
   masterOrderValidation,
   validateRequest,
+  optionalCustomer,
   createMasterQrOrder,
 );
 
@@ -117,8 +122,12 @@ router.post(
       .isInt({ min: 1, max: 20 })
       .withMessage("Item quantity must be between 1 and 20")
       .toInt(),
+    body("fulfillmentType").optional().isIn(["asap", "scheduled"]),
+    body("scheduledFor").if(body("fulfillmentType").equals("scheduled")).isISO8601(),
+    body("scheduledSlot").if(body("fulfillmentType").equals("scheduled")).trim().isLength({ min: 2, max: 40 }),
   ],
   validateRequest,
+  optionalCustomer,
   createPublicOrder,
 );
 

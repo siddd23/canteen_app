@@ -55,6 +55,12 @@ const canteenValidation = [
     .trim()
     .notEmpty()
     .withMessage("Closing time is required"),
+
+  body("serviceSlots").optional().isArray({ min: 2, max: 2 })
+    .withMessage("Exactly two service slots are required"),
+  body("serviceSlots.*.label").optional().trim().notEmpty().isLength({ max: 40 }),
+  body("serviceSlots.*.openingTime").optional().trim().notEmpty(),
+  body("serviceSlots.*.closingTime").optional().trim().notEmpty(),
 ];
 
 router
@@ -119,6 +125,12 @@ router.patch(
       .trim()
       .notEmpty()
       .withMessage("Closing time cannot be empty"),
+
+    body("serviceSlots").optional().isArray({ min: 2, max: 2 })
+      .withMessage("Exactly two service slots are required"),
+    body("serviceSlots.*.label").optional().trim().notEmpty().isLength({ max: 40 }),
+    body("serviceSlots.*.openingTime").optional().trim().notEmpty(),
+    body("serviceSlots.*.closingTime").optional().trim().notEmpty(),
 
     body("status")
       .optional()

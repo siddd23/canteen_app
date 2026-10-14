@@ -4,6 +4,15 @@ const {
   ensureCanteenMasterQr,
 } = require("../services/canteenMasterQrService");
 
+const normalizeServiceSlots = (slots, openingTime, closingTime) => {
+  if (!Array.isArray(slots) || slots.length !== 2) return [];
+  return slots.map((slot, index) => ({
+    label: String(slot.label || (index === 0 ? "Lunch" : "Dinner")).trim(),
+    openingTime: String(slot.openingTime || openingTime || "").trim(),
+    closingTime: String(slot.closingTime || closingTime || "").trim(),
+  }));
+};
+
 /*
  * POST /api/canteens
  * Approved canteen owner
@@ -17,7 +26,10 @@ const createCanteen = async (req, res, next) => {
       contactNumber,
       openingTime,
       closingTime,
+      serviceSlots,
     } = req.body;
+
+    const normalizedSlots = normalizeServiceSlots(serviceSlots, openingTime, closingTime);
 
     const existingCanteen = await Canteen.findOne({
       ownerId: req.user.id,
@@ -43,6 +55,7 @@ const createCanteen = async (req, res, next) => {
       contactNumber: contactNumber.trim(),
       openingTime: openingTime.trim(),
       closingTime: closingTime.trim(),
+      serviceSlots: normalizedSlots,
       ...masterQr,
     });
 
@@ -127,6 +140,7 @@ const updateMyCanteen = async (req, res, next) => {
       "contactNumber",
       "openingTime",
       "closingTime",
+      "serviceSlots",
       "status",
     ];
 
@@ -140,6 +154,16 @@ const updateMyCanteen = async (req, res, next) => {
             : req.body[field];
       }
     });
+
+    if (updates.serviceSlots) {
+      updates.serviceSlots = normalizeServiceSlots(
+        updates.serviceSlots,
+        updates.openingTime,
+        updates.closingTime,
+      );
+      updates.openingTime = updates.serviceSlots[0].openingTime;
+      updates.closingTime = updates.serviceSlots[1].closingTime;
+    }
 
     if (updates.name) {
       const duplicateCanteen = await Canteen.findOne({
