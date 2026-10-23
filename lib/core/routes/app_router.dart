@@ -11,6 +11,8 @@ import '../../features/canteen_owner/presentation/screens/owner_dashboard_screen
 import '../../features/canteen_owner/presentation/screens/register_office_screen.dart';
 import '../../features/employee/presentation/screens/employee_menu_screen.dart';
 import '../../features/employee/presentation/screens/employee_order_tracking_screen.dart';
+import '../../features/employee/presentation/screens/employee_auth_screen.dart';
+import '../../features/employee/presentation/screens/employee_dashboard_screen.dart';
 import '../../features/super_admin/presentation/screens/admin_dashboard_screen.dart';
 
 abstract final class AppRoutes {
@@ -28,6 +30,8 @@ abstract final class AppRoutes {
 
   static const String employeeOrder = '/order/:qrToken';
   static const String employeeOrderTracking = '/track/:orderNumber';
+  static const String employeeAuth = '/employee/auth';
+  static const String employeeDashboard = '/employee/dashboard';
 }
 
 final GoRouter appRouter = GoRouter(
@@ -75,6 +79,16 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.adminDashboard,
       builder: (context, state) => const AdminDashboardScreen(),
+    ),
+    GoRoute(
+      path: AppRoutes.employeeAuth,
+      builder: (context, state) => EmployeeAuthScreen(
+        startWithRegister: state.uri.queryParameters['mode'] == 'register',
+      ),
+    ),
+    GoRoute(
+      path: AppRoutes.employeeDashboard,
+      builder: (context, state) => const EmployeeDashboardScreen(),
     ),
     GoRoute(
       path: AppRoutes.employeeOrder,

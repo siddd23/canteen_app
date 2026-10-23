@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_strings.dart';
 import '../../../../shared/widgets/role_card.dart';
+import '../../../../core/routes/app_router.dart';
+import 'package:go_router/go_router.dart';
 
 class RoleSelectionScreen extends StatelessWidget {
   const RoleSelectionScreen({super.key});
@@ -77,7 +79,7 @@ class RoleSelectionScreen extends StatelessWidget {
         title: AppStrings.employee,
         description: AppStrings.employeeDescription,
         icon: Icons.badge_outlined,
-        onTap: () => _showNextStep(context, AppStrings.employee),
+        onTap: () => context.push(AppRoutes.employeeAuth),
       ),
       RoleCard(
         title: AppStrings.canteenOwner,

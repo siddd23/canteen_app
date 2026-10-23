@@ -37,8 +37,8 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Manage canteens, receive office orders and track '
-                      'payments from one platform.',
+                      'Order food, track deliveries and manage canteens '
+                      'from one connected platform.',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
                         color: AppColors.textSecondary,
@@ -48,9 +48,29 @@ class WelcomeScreen extends StatelessWidget {
                     const SizedBox(height: 42),
                     SizedBox(
                       width: double.infinity,
-                      child: FilledButton(
+                      child: FilledButton.icon(
+                        onPressed: () => context.push(AppRoutes.employeeAuth),
+                        icon: const Icon(Icons.badge_outlined),
+                        label: const Text('Employee Login'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.push('${AppRoutes.employeeAuth}?mode=register'),
+                        icon: const Icon(Icons.person_add_alt_1),
+                        label: const Text('Create Employee Account'),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    const Row(children: [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('Canteen owner')), Expanded(child: Divider())]),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
                         onPressed: () => context.push(AppRoutes.login),
-                        child: const Text('Login'),
+                        child: const Text('Owner Login'),
                       ),
                     ),
                     const SizedBox(height: 14),
@@ -58,13 +78,13 @@ class WelcomeScreen extends StatelessWidget {
                       width: double.infinity,
                       child: OutlinedButton(
                         onPressed: () => context.push(AppRoutes.register),
-                        child: const Text('Register as Canteen Owner'),
+                        child: const Text('Register Canteen Owner'),
                       ),
                     ),
                     const SizedBox(height: 30),
                     const Text(
-                      'Employees can access the menu by scanning the QR code '
-                      'provided at their office.',
+                      'Guest ordering remains available by scanning an office '
+                      'or canteen QR code.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppColors.textSecondary,

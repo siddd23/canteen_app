@@ -71,6 +71,11 @@ class AuthService {
     final storage = TokenStorageService.instance;
     try {
       if (!await storage.hasSession) return null;
+      if (await storage.getRole() == 'customer') {
+        await ApiService.instance.get('${ApiConstants.customers}/me');
+        await storage.saveDestination('employee_dashboard');
+        return 'employee_dashboard';
+      }
       final response = await ApiService.instance.get(ApiConstants.session);
       final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
       final destination = data['destination']?.toString();

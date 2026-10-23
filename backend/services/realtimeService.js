@@ -93,6 +93,9 @@ const newOrderPayload = (order) => ({
   itemCount: order.itemCount,
   grandTotal: order.grandTotal,
   orderStatus: order.orderStatus,
+  fulfillmentType: order.fulfillmentType,
+  scheduledFor: order.scheduledFor,
+  scheduledSlot: order.scheduledSlot,
   createdAt: order.createdAt,
 });
 

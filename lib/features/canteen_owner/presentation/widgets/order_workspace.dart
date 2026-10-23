@@ -543,10 +543,13 @@ class _OrderCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    _time(order.createdAt),
+                    order.isScheduled
+                        ? 'Scheduled: ${_time(order.scheduledFor)}${order.scheduledSlot.isEmpty ? '' : ' · ${order.scheduledSlot}'}'
+                        : 'Ordered: ${_time(order.createdAt)}',
                     style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ],
@@ -652,7 +655,7 @@ class _OrderCard extends StatelessWidget {
                 ],
               ),
             ),
-            _Chip(order.paymentStatus),
+            _Chip(order.billingLabel),
           ],
         ),
         if (order.isPending) ...[
@@ -740,6 +743,7 @@ class _Chip extends StatelessWidget {
       'Pending' || 'Unpaid' => AppColors.warning,
       'Accepted' => const Color(0xFF2563EB),
       'Delivered' || 'Paid' => AppColors.success,
+      'Not billable' || 'Voided' => AppColors.textSecondary,
       _ => AppColors.error,
     };
     return Container(

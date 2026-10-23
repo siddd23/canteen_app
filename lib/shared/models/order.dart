@@ -43,6 +43,9 @@ class CanteenOrder {
     required this.grandTotal,
     required this.orderStatus,
     required this.paymentStatus,
+    required this.fulfillmentType,
+    required this.scheduledFor,
+    required this.scheduledSlot,
     required this.createdAt,
     required this.orderSource,
     required this.deliveryBuildingName,
@@ -72,6 +75,9 @@ class CanteenOrder {
   final double grandTotal;
   final String orderStatus;
   final String paymentStatus;
+  final String fulfillmentType;
+  final DateTime? scheduledFor;
+  final String scheduledSlot;
   final DateTime? createdAt;
   final String orderSource;
   final String deliveryBuildingName;
@@ -96,6 +102,11 @@ class CanteenOrder {
   bool get isDelivered => orderStatus == 'Delivered';
   bool get needsPaymentDecision => isDelivered && paymentStatus == 'Unpaid';
   bool get isPayLater => paymentStatus == 'PayLater';
+  bool get isScheduled => fulfillmentType == 'scheduled' && scheduledFor != null;
+  String get billingLabel =>
+      orderStatus == 'Rejected' || orderStatus == 'Cancelled'
+          ? 'Not billable'
+          : paymentStatus;
 
   factory CanteenOrder.fromJson(Map<String, dynamic> json) {
     final office = Map<String, dynamic>.from(
@@ -108,6 +119,12 @@ class CanteenOrder {
       json['deliveryAddress'] as Map? ?? const {},
     );
     final rawItems = json['items'] as List? ?? const [];
+    final parsedOrderStatus = json['orderStatus']?.toString() ?? 'Pending';
+    final rawPaymentStatus = json['paymentStatus']?.toString() ?? 'Unpaid';
+    final parsedPaymentStatus =
+        parsedOrderStatus == 'Rejected' || parsedOrderStatus == 'Cancelled'
+            ? 'Voided'
+            : rawPaymentStatus;
     return CanteenOrder(
       id: (json['_id'] ?? json['id'])?.toString() ?? '',
       orderNumber: json['orderNumber']?.toString() ?? '',
@@ -129,8 +146,11 @@ class CanteenOrder {
           .toList(),
       itemCount: (json['itemCount'] as num?)?.toInt() ?? 0,
       grandTotal: (json['grandTotal'] as num?)?.toDouble() ?? 0,
-      orderStatus: json['orderStatus']?.toString() ?? 'Pending',
-      paymentStatus: json['paymentStatus']?.toString() ?? 'Unpaid',
+      orderStatus: parsedOrderStatus,
+      paymentStatus: parsedPaymentStatus,
+      fulfillmentType: json['fulfillmentType']?.toString() ?? 'asap',
+      scheduledFor: DateTime.tryParse(json['scheduledFor']?.toString() ?? ''),
+      scheduledSlot: json['scheduledSlot']?.toString() ?? '',
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
       orderSource: json['orderSource']?.toString() ?? 'office_qr',
       deliveryBuildingName: delivery['buildingName']?.toString() ?? '',

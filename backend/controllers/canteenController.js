@@ -269,13 +269,28 @@ const updateMasterQrStatus = async (req, res, next) => {
     }
 
     await ensureCanteenMasterQr(canteen);
+    const permanentCode = canteen.publicCode;
+    const permanentUrl = canteen.masterOrderingUrl;
     canteen.masterQrEnabled = req.body.enabled;
     await canteen.save();
+
+    if (
+      canteen.publicCode !== permanentCode ||
+      canteen.masterOrderingUrl !== permanentUrl
+    ) {
+      throw new Error("Master QR identity changed while updating its status");
+    }
 
     return res.status(200).json({
       success: true,
       message: `Master QR ordering ${canteen.masterQrEnabled ? "enabled" : "paused"}`,
-      data: { canteen },
+      data: {
+        canteen,
+        permanentIdentity: {
+          publicCode: permanentCode,
+          masterOrderingUrl: permanentUrl,
+        },
+      },
     });
   } catch (error) {
     next(error);

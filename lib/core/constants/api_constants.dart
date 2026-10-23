@@ -39,6 +39,7 @@ abstract final class ApiConstants {
   static const String orders = '/orders';
   static const String publicOrders = '/public/orders';
   static const String account = '/account';
+  static const String customers = '/customers';
 
   static const String pendingOwners = '/admin/owners/pending';
   static const String owners = '/admin/owners';

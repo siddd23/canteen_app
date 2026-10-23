@@ -43,7 +43,7 @@ class _OrderHistoryWorkspaceState extends State<OrderHistoryWorkspace> {
     'Rejected',
     'Cancelled',
   ];
-  static const _paymentStatuses = [_all, 'Unpaid', 'Paid', 'PayLater'];
+  static const _paymentStatuses = [_all, 'Unpaid', 'Paid', 'PayLater', 'Voided'];
 
   final TextEditingController _searchController = TextEditingController();
   OrderHistoryResult? _result;

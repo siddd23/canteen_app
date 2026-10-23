@@ -33,6 +33,7 @@ class _SplashScreenState extends State<SplashScreen> {
       'admin_dashboard' => AppRoutes.adminDashboard,
       'owner_dashboard' => AppRoutes.ownerDashboard,
       'create_canteen' => AppRoutes.createCanteen,
+      'employee_dashboard' => AppRoutes.employeeDashboard,
       _ => AppRoutes.welcome,
     };
     if (destination == 'owner_dashboard') {

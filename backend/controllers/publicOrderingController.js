@@ -163,6 +163,25 @@ const createTrackingToken = () => crypto.randomBytes(32).toString("hex");
 const hashTrackingToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
+const serviceTimeToMinutes = (value) => {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (!match) return null;
+  let hour = Number(match[1]) % 12;
+  if (match[3].toUpperCase() === "PM") hour += 12;
+  return hour * 60 + Number(match[2]);
+};
+
+const indiaTimeParts = (date) => {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Number(values.hour) * 60 + Number(values.minute);
+};
+
 const resolveSchedule = (body, canteen) => {
   if (body.fulfillmentType !== "scheduled") {
     return { fulfillmentType: "asap", scheduledFor: null, scheduledSlot: "" };
@@ -187,6 +206,21 @@ const resolveSchedule = (body, canteen) => {
   );
   if (!slot) {
     const error = new Error("Select a valid canteen service slot");
+    error.statusCode = 400;
+    throw error;
+  }
+  const openingMinutes = serviceTimeToMinutes(slot.openingTime);
+  const closingMinutes = serviceTimeToMinutes(slot.closingTime);
+  const scheduledMinutes = indiaTimeParts(scheduledFor);
+  const isInsideSlot = openingMinutes != null && closingMinutes != null && (
+    openingMinutes <= closingMinutes
+      ? scheduledMinutes >= openingMinutes && scheduledMinutes <= closingMinutes
+      : scheduledMinutes >= openingMinutes || scheduledMinutes <= closingMinutes
+  );
+  if (!isInsideSlot) {
+    const error = new Error(
+      `Scheduled time must be between ${slot.openingTime} and ${slot.closingTime}`,
+    );
     error.statusCode = 400;
     throw error;
   }

@@ -1513,7 +1513,11 @@ class _MasterQrDialogState extends State<_MasterQrDialog> {
               SwitchListTile.adaptive(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Accept orders from this QR'),
-                subtitle: Text(_canteen.masterQrEnabled ? 'Active' : 'Paused'),
+                subtitle: Text(
+                  _canteen.masterQrEnabled
+                      ? 'Active - the permanent link is accepting orders'
+                      : 'Paused - the code and link remain unchanged',
+                ),
                 value: _canteen.masterQrEnabled,
                 onChanged: _updating ? null : _toggleStatus,
               ),

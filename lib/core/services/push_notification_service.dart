@@ -39,10 +39,16 @@ Future<void> showPersistentOrderAlarm(RemoteMessage message) async {
       .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
   final orderNumber = message.data['orderNumber']?.toString() ?? 'New order';
+  final scheduledFor = DateTime.tryParse(
+    message.data['scheduledFor']?.toString() ?? '',
+  );
+  final scheduledLabel = scheduledFor == null
+      ? ''
+      : ' scheduled for ${_notificationTime(scheduledFor)}';
   await plugin.show(
     id: _orderNotificationId(orderId),
     title: 'New BookFood order',
-    body: '$orderNumber is waiting for acceptance',
+    body: '$orderNumber$scheduledLabel is waiting for acceptance',
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         _orderAlarmChannelId,
@@ -68,6 +74,14 @@ Future<void> showPersistentOrderAlarm(RemoteMessage message) async {
       'canteenId': message.data['canteenId']?.toString() ?? '',
     }).query,
   );
+}
+
+String _notificationTime(DateTime value) {
+  final local = value.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final meridiem = local.hour >= 12 ? 'PM' : 'AM';
+  return '${local.day}/${local.month}/${local.year} at $hour:$minute $meridiem';
 }
 
 class PendingOrderNotification {

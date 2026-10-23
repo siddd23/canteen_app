@@ -37,16 +37,28 @@ const createMasterQrFields = async () => {
 };
 
 const ensureCanteenMasterQr = async (canteen) => {
-  if (canteen.publicCode && canteen.masterOrderingUrl && canteen.masterQrCode) {
-    return canteen;
+  // publicCode is the permanent public identity of a canteen. Once assigned,
+  // always rebuild missing QR data from that same code instead of generating
+  // another code. Pausing or enabling ordering must never change this value.
+  const publicCode = canteen.publicCode || await createUniquePublicCode();
+  const missingCode = !canteen.publicCode;
+  const missingQrData = !canteen.masterOrderingUrl || !canteen.masterQrCode;
+
+  if (!missingCode && !missingQrData) return canteen;
+
+  if (missingCode) canteen.publicCode = publicCode;
+  if (missingQrData) {
+    const fields = await buildMasterQr(publicCode);
+    canteen.masterOrderingUrl = fields.masterOrderingUrl;
+    canteen.masterQrCode = fields.masterQrCode;
   }
-  const fields = await createMasterQrFields();
-  canteen.publicCode = fields.publicCode;
-  canteen.masterOrderingUrl = fields.masterOrderingUrl;
-  canteen.masterQrCode = fields.masterQrCode;
   if (canteen.masterQrEnabled === undefined) canteen.masterQrEnabled = true;
   await canteen.save();
   return canteen;
 };
 
-module.exports = { createMasterQrFields, ensureCanteenMasterQr };
+module.exports = {
+  buildMasterQr,
+  createMasterQrFields,
+  ensureCanteenMasterQr,
+};

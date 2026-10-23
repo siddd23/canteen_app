@@ -163,7 +163,11 @@ const deleteOrderHistory = async (req, res, next) => {
 
 const getOfficeStatement = async (req, res, next) => {
   try {
-    const filter = { ownerId: req.user.id, officeId: req.query.officeId };
+    const filter = {
+      ownerId: req.user.id,
+      officeId: req.query.officeId,
+      orderStatus: "Delivered",
+    };
     if (req.query.dateFrom || req.query.dateTo) {
       filter.createdAt = {};
       if (req.query.dateFrom) {
@@ -212,6 +216,7 @@ const getCustomerStatement = async (req, res, next) => {
     const requestedKey = employeeKey(req.query.customerName, req.query.mobile);
     const filter = {
       ownerId: req.user.id,
+      orderStatus: "Delivered",
       $or: [
         { employeeKey: requestedKey },
         {
@@ -600,6 +605,10 @@ const updateOrderStatus = async (req, res, next) => {
     }
 
     order.orderStatus = nextStatus;
+    if (nextStatus === "Rejected") {
+      order.paymentStatus = "Voided";
+      order.paidAt = null;
+    }
     const timestampField = {
       Accepted: "acceptedAt",
       Delivered: "deliveredAt",

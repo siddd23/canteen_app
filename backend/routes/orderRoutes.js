@@ -97,7 +97,7 @@ router.get(
       .withMessage("Invalid order status"),
     query("paymentStatus")
       .optional()
-      .isIn(["Unpaid", "Paid", "PayLater"])
+      .isIn(["Unpaid", "Paid", "PayLater", "Voided"])
       .withMessage("Invalid payment status"),
     query("dateFrom").optional().isISO8601().withMessage("Invalid from date"),
     query("dateTo").optional().isISO8601().withMessage("Invalid to date"),
@@ -143,7 +143,7 @@ router.get(
   [
     query("canteenId").optional().isMongoId().withMessage("Invalid canteen ID"),
     query("status").optional().isIn(["Pending", "Accepted", "Delivered", "Rejected", "Cancelled"]).withMessage("Invalid order status"),
-    query("paymentStatus").optional().isIn(["Unpaid", "Paid", "PayLater"]).withMessage("Invalid payment status"),
+    query("paymentStatus").optional().isIn(["Unpaid", "Paid", "PayLater", "Voided"]).withMessage("Invalid payment status"),
   ],
   validateRequest,
   getMyOrders,
