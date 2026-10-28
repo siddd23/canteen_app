@@ -14,6 +14,7 @@ const customerSchema = new mongoose.Schema({
     unique: true,
     sparse: true,
   },
+  savedCanteens: [{ type: mongoose.Schema.Types.ObjectId, ref: "Canteen" }],
   officeId: { type: String, trim: true, uppercase: true, maxlength: 50, default: "" },
   password: { type: String, required: true, select: false, minlength: 8 },
 }, { timestamps: true, versionKey: false });

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'employee_canteens_screen.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_colors.dart';
@@ -97,20 +98,31 @@ class _HomeTab extends StatelessWidget {
           const SizedBox(height: 6),
           const Text('Order food, track your current order and keep your history in one place.', style: TextStyle(color: AppColors.textSecondary, height: 1.4)),
           const SizedBox(height: 22),
-          Card(
-            color: Colors.black,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Icon(Icons.qr_code_scanner, color: Colors.white, size: 32),
-                const SizedBox(height: 16),
-                const Text('Scan a BookFood QR', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 6),
-                const Text('Scan an office or canteen QR to open the correct menu.', style: TextStyle(color: Colors.white70, height: 1.4)),
-                const SizedBox(height: 18),
-                FilledButton.tonalIcon(onPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR camera integration is the next implementation step.'))), icon: const Icon(Icons.camera_alt_outlined), label: const Text('Open scanner')),
-              ]),
-            ),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF14233A), Color(0xFF204D53)]), borderRadius: BorderRadius.circular(26)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.restaurant_menu_rounded, size: 35, color: Color(0xFF91E8D4)),
+              const SizedBox(height: 17),
+              const Text('Good food. Great workdays.', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 8),
+              const Text('Your favourite canteens, one effortless ordering experience.', style: TextStyle(color: Colors.white70, height: 1.5)),
+              const SizedBox(height: 20),
+              SizedBox(width: double.infinity, child: FilledButton.icon(
+                style: FilledButton.styleFrom(backgroundColor: Colors.white, foregroundColor: const Color(0xFF14233A)),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeOrderChoiceScreen())),
+                icon: const Icon(Icons.arrow_forward_rounded), label: const Text('Order food'))),
+            ]),
+          ),
+          const SizedBox(height: 15),
+          ListTile(
+            tileColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            leading: const CircleAvatar(backgroundColor: Color(0xFFE3F4F0), child: Icon(Icons.storefront_rounded, color: Color(0xFF147D77))),
+            title: const Text('My canteens', style: TextStyle(fontWeight: FontWeight.w800)),
+            subtitle: const Text('Connect with a unique code • Browse saved places'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeCanteensScreen())),
           ),
           const SizedBox(height: 18),
           Row(children: [
