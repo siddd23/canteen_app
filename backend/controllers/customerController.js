@@ -13,6 +13,7 @@ const publicCustomer = (customer) => ({
   mobile: customer.mobile,
   email: customer.email || "",
   officeId: customer.officeId || "",
+  deliveryAddress: customer.deliveryAddress || {},
 });
 
 const signup = async (req, res, next) => {
@@ -40,7 +41,27 @@ const login = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-const profile = (req, res) => res.json({ success: true, data: { customer: publicCustomer(req.customer) } });
+// Recover previous checkout addresses for accounts that ordered before
+// automatic profile saving was introduced (no extra order required).
+const profile = async (req, res, next) => {
+  try {
+    const customer = req.customer;
+    const current = customer.deliveryAddress || {};
+    if (!current.buildingName || !current.streetArea || !current.pincode) {
+      const latest = await Order.findOne({
+        customerId: customer._id,
+        "deliveryAddress.buildingName": { $nin: [null, ""] },
+      }).select("deliveryAddress").sort({ createdAt: -1 }).lean();
+      if (latest?.deliveryAddress?.buildingName) {
+        const fields = ["buildingName", "floorOrRoom", "streetArea", "city", "pincode"];
+        const address = Object.fromEntries(fields.map((field) => [field, latest.deliveryAddress[field] || ""]));
+        await Customer.updateOne({ _id: customer._id }, { $set: { deliveryAddress: address } });
+        customer.deliveryAddress = address;
+      }
+    }
+    return res.json({ success: true, data: { customer: publicCustomer(customer) } });
+  } catch (error) { next(error); }
+};
 
 const updateProfile = async (req, res, next) => {
   try {
@@ -75,6 +96,21 @@ const updateProfile = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+// Update only the authenticated employee's saved checkout address.
+const updateDeliveryAddress = async (req, res, next) => {
+  try {
+    const fields = ["buildingName", "floorOrRoom", "streetArea", "city", "pincode"];
+    const address = Object.fromEntries(fields.map((field) => [field, req.body[field].trim()]));
+    const customer = await Customer.findByIdAndUpdate(
+      req.customer._id,
+      { $set: { deliveryAddress: address } },
+      { new: true, runValidators: true },
+    );
+    if (!customer) return res.status(404).json({ success: false, message: "Employee not found" });
+    return res.json({ success: true, data: { deliveryAddress: customer.deliveryAddress } });
+  } catch (error) { next(error); }
+};
+
 const orders = async (req, res, next) => {
   try {
     const list = await Order.find({ customerId: req.customer._id })
@@ -84,4 +120,4 @@ const orders = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-module.exports = { signup, login, profile, updateProfile, orders };
+module.exports = { signup, login, profile, updateProfile, updateDeliveryAddress, orders };

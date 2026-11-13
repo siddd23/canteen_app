@@ -73,20 +73,26 @@ class _EmployeeCanteensScreenState extends State<EmployeeCanteensScreen> {
   @override Widget build(BuildContext context) => Scaffold(
     backgroundColor: _paper,
     appBar: AppBar(backgroundColor: _paper, title: Text(widget.pickForOrder ? 'Choose a canteen' : 'My canteens', style: const TextStyle(fontWeight: FontWeight.w800, color: _navy))),
-    floatingActionButton: FloatingActionButton.extended(backgroundColor: _teal, foregroundColor: Colors.white, onPressed: _add, icon: const Icon(Icons.add), label: const Text('Add canteen')),
+    floatingActionButton: _saved.isEmpty ? null : FloatingActionButton.extended(backgroundColor: _teal, foregroundColor: Colors.white, onPressed: _add, icon: const Icon(Icons.add), label: const Text('Add canteen')),
     body: RefreshIndicator(onRefresh: _refresh, child: ListView(padding: const EdgeInsets.fromLTRB(20, 14, 20, 110), children: [
-      const Text('YOUR COLLECTION', style: TextStyle(color: _teal, fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.8)),
-      const SizedBox(height: 8), Text(widget.pickForOrder ? 'Where are we ordering from?' : 'Your favourite food spots', style: const TextStyle(color: _navy, fontSize: 26, fontWeight: FontWeight.w900)),
-      const SizedBox(height: 8), Text('${_saved.length} connected canteen${_saved.length == 1 ? '' : 's'} • Available across your devices', style: const TextStyle(color: Colors.black54)),
-      const SizedBox(height: 24),
+      if (!_loading && _error == null && _saved.isNotEmpty)
+        Padding(padding: const EdgeInsets.only(bottom: 16), child: Text(
+          '${_saved.length} saved canteen${_saved.length == 1 ? '' : 's'}',
+          style: const TextStyle(color: Colors.black54, fontSize: 13),
+        )),
       if (_loading) const Center(child: Padding(padding: EdgeInsets.all(50), child: CircularProgressIndicator()))
       else if (_error != null) Center(child: Column(children: [Text(_error!), TextButton(onPressed: _refresh, child: const Text('Try again'))]))
-      else if (_saved.isEmpty) Container(padding: const EdgeInsets.all(30), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24)), child: Column(children: [
-        const Icon(Icons.storefront_outlined, color: _teal, size: 65), const SizedBox(height: 14),
-        const Text('Your next meal starts here', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20, color: _navy)),
-        const SizedBox(height: 8), const Text('Add your first canteen using its unique code to browse the menu and order.', textAlign: TextAlign.center, style: TextStyle(color: Colors.black54, height: 1.5)),
-        const SizedBox(height: 20), FilledButton(onPressed: _add, child: const Text('Connect a canteen')),
-      ]))
+      else if (_saved.isEmpty) Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 38),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20)),
+        child: Column(children: [
+          Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: _teal.withValues(alpha: .08), shape: BoxShape.circle), child: const Icon(Icons.storefront_outlined, color: _teal, size: 36)),
+          const SizedBox(height: 17),
+          const Text('No canteens added', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _navy)),
+          const SizedBox(height: 17),
+          FilledButton.icon(style: FilledButton.styleFrom(backgroundColor: _teal), onPressed: _add, icon: const Icon(Icons.add), label: const Text('Add canteen')),
+        ]),
+      )
       else ..._saved.map((c) => Padding(padding: const EdgeInsets.only(bottom: 14), child: Material(color: Colors.white, borderRadius: BorderRadius.circular(22), child: InkWell(
         borderRadius: BorderRadius.circular(22), onTap: c['available'] == true ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => EmployeeOrderMenuScreen(code: c['publicCode'].toString()))) : null,
         child: Padding(padding: const EdgeInsets.all(18), child: Row(children: [
@@ -106,19 +112,18 @@ class EmployeeOrderChoiceScreen extends StatelessWidget {
   const EmployeeOrderChoiceScreen({super.key});
   @override Widget build(BuildContext context) => Scaffold(backgroundColor: _paper,
     appBar: AppBar(backgroundColor: _paper, title: const Text('Order food', style: TextStyle(fontWeight: FontWeight.w800))),
-    body: Padding(padding: const EdgeInsets.all(22), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 16), const Text('How would you like to order?', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w900, color: _navy)),
-      const SizedBox(height: 10), const Text('Your next delicious break is just a few taps away.', style: TextStyle(color: Colors.black54)),
-      const SizedBox(height: 30), _ChoiceCard(icon: Icons.qr_code_scanner_rounded, heading: 'Scan a QR code', detail: 'Use the QR code displayed at your office or canteen', onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Camera scanning requires a QR scanner plugin. Use your saved canteens to order now.')))),
-      const SizedBox(height: 16), _ChoiceCard(icon: Icons.storefront_rounded, heading: 'Added canteens', detail: 'Browse all the canteens you have saved and order directly', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeCanteensScreen(pickForOrder: true)))),
-    ])),
+    body: ListView(padding: const EdgeInsets.fromLTRB(20, 22, 20, 24), children: [
+      _ChoiceCard(icon: Icons.qr_code_scanner_rounded, heading: 'Scan QR code', detail: 'Scan at your canteen', onTap: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('QR scanning is coming soon. Use a saved canteen to order.')))),
+      const SizedBox(height: 12),
+      _ChoiceCard(icon: Icons.storefront_rounded, heading: 'Added canteens', detail: 'Choose from your saved canteens', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const EmployeeCanteensScreen(pickForOrder: true)))),
+    ]),
   );
 }
 class _ChoiceCard extends StatelessWidget {
   const _ChoiceCard({required this.icon, required this.heading, required this.detail, required this.onTap});
   final IconData icon; final String heading; final String detail; final VoidCallback onTap;
-  @override Widget build(BuildContext context) => Material(color: Colors.white, borderRadius: BorderRadius.circular(22), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(22), child: Padding(padding: const EdgeInsets.all(22), child: Row(children: [
-    Container(padding: const EdgeInsets.all(17), decoration: BoxDecoration(color: _teal.withValues(alpha: .10), borderRadius: BorderRadius.circular(18)), child: Icon(icon, size: 32, color: _teal)),
-    const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(heading, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: _navy)), const SizedBox(height: 5), Text(detail, style: const TextStyle(fontSize: 13, color: Colors.black54, height: 1.4))])), const Icon(Icons.arrow_forward_ios, size: 17, color: _teal),
+  @override Widget build(BuildContext context) => Material(color: Colors.white, borderRadius: BorderRadius.circular(22), child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(22), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 17, vertical: 18), child: Row(children: [
+    Container(padding: const EdgeInsets.all(13), decoration: BoxDecoration(color: _teal.withValues(alpha: .10), borderRadius: BorderRadius.circular(18)), child: Icon(icon, size: 25, color: _teal)),
+    const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(heading, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: _navy)), const SizedBox(height: 4), Text(detail, style: const TextStyle(fontSize: 13, color: Colors.black54, height: 1.4))])), const Icon(Icons.arrow_forward_ios, size: 17, color: _teal),
   ]))));
 }

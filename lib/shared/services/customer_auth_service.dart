@@ -90,6 +90,13 @@ class CustomerAuthService {
     );
   }
 
+  Future<void> saveDeliveryAddress(Map<String, String> address) async {
+    await ApiService.instance.patch(
+      '${ApiConstants.customers}/me/delivery-address',
+      body: address,
+    );
+  }
+
   Future<List<Map<String, dynamic>>> orders() async {
     final response = await ApiService.instance.get('${ApiConstants.customers}/orders');
     final data = Map<String, dynamic>.from(response['data'] as Map? ?? {});
@@ -97,6 +104,19 @@ class CustomerAuthService {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
+  }
+
+
+
+  Future<Map<String, dynamic>> orderByNumber(String orderNumber) async {
+    final list = await orders();
+    try {
+      return list.firstWhere(
+        (item) => (item['orderNumber']?.toString() ?? '').toUpperCase() == orderNumber.trim().toUpperCase(),
+      );
+    } catch (_) {
+      throw StateError('Order not found');
+    }
   }
 
   Future<void> logout() => TokenStorageService.instance.clearSession();

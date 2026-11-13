@@ -163,6 +163,31 @@ const createTrackingToken = () => crypto.randomBytes(32).toString("hex");
 const hashTrackingToken = (token) =>
   crypto.createHash("sha256").update(token).digest("hex");
 
+// Persist an authenticated employee's last successful checkout address.
+// This happens inside the order endpoint instead of relying on a second
+// client request that can be interrupted by navigation or networking.
+const saveCustomerCheckoutAddress = async (customer, address) => {
+  if (!customer?._id || !address) return false;
+  const Customer = require("../models/Customer");
+  try {
+    await Customer.updateOne(
+      { _id: customer._id },
+      { $set: { deliveryAddress: {
+        buildingName: address.buildingName,
+        floorOrRoom: address.floorOrRoom,
+        streetArea: address.streetArea,
+        city: address.city,
+        pincode: address.pincode,
+      } } },
+      { runValidators: true },
+    );
+    return true;
+  } catch (error) {
+    console.error(`Order succeeded but delivery address save failed for customer ${customer._id}: ${error.message}`);
+    return false;
+  }
+};
+
 const serviceTimeToMinutes = (value) => {
   const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!match) return null;
@@ -553,6 +578,8 @@ const createMasterQrOrder = async (req, res, next) => {
       ...schedule,
     });
 
+    const addressSaved = await saveCustomerCheckoutAddress(req.customer, cleanAddress);
+
     emitNewOrder(order);
     sendNewOrderPush(order).catch((error) => {
       console.error(`Unable to send new-order push notification: ${error.message}`);
@@ -577,6 +604,7 @@ const createMasterQrOrder = async (req, res, next) => {
           scheduledFor: order.scheduledFor,
           scheduledSlot: order.scheduledSlot,
           trackingToken,
+          addressSaved,
           trackingPath: `/track/${order.orderNumber}?token=${trackingToken}`,
         },
       },

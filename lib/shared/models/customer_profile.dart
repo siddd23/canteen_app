@@ -5,6 +5,7 @@ class CustomerProfile {
     required this.mobile,
     required this.email,
     required this.officeId,
+    required this.deliveryAddress,
   });
 
   final String id;
@@ -12,6 +13,7 @@ class CustomerProfile {
   final String mobile;
   final String email;
   final String officeId;
+  final Map<String, dynamic> deliveryAddress;
 
   factory CustomerProfile.fromJson(Map<String, dynamic> json) {
     return CustomerProfile(
@@ -20,6 +22,7 @@ class CustomerProfile {
       mobile: json['mobile']?.toString() ?? '',
       email: json['email']?.toString() ?? '',
       officeId: json['officeId']?.toString() ?? '',
+      deliveryAddress: Map<String, dynamic>.from(json['deliveryAddress'] as Map? ?? const {}),
     );
   }
 }

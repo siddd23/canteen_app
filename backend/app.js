@@ -8,7 +8,6 @@ const { getAllowedOrigins } = require("./config/environment");
 const requestContext = require("./middleware/requestContextMiddleware");
 const {
   generalRateLimit,
-  authRateLimit,
   publicOrderRateLimit,
 } = require("./middleware/rateLimitMiddleware");
 
@@ -93,9 +92,9 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use(generalRateLimit);
-app.use("/api/auth", authRateLimit, authRoutes);
+app.use("/api/auth", authRoutes);
 app.use("/api/session", sessionRoutes);
-app.use("/api/customers", authRateLimit, customerRoutes);
+app.use("/api/customers", customerRoutes);
 app.use("/api/admin/owners", ownerRoutes);
 app.use("/api/canteens", canteenRoutes);
 app.use("/api/canteens", menuRoutes);

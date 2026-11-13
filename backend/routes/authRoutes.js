@@ -8,10 +8,12 @@ const {
 
 const validateRequest = require("../middleware/validationMiddleware");
 
+const { authRateLimit } = require("../middleware/rateLimitMiddleware");
 const router = express.Router();
 
 router.post(
   "/register",
+  authRateLimit,
   [
     body("name")
       .trim()
@@ -55,6 +57,7 @@ router.post(
 
 router.post(
   "/login",
+  authRateLimit,
   [
     body("email")
       .trim()
